@@ -15,6 +15,7 @@ class Vehicle(Base):
     brand = Column(String(50), nullable=True)
     model = Column(String(50), nullable=True)
     year = Column(Integer, nullable=True)
+    color = Column(String(50), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
