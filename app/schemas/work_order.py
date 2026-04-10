@@ -5,6 +5,7 @@ from decimal import Decimal
 
 
 class WorkOrderBase(BaseModel):
+    workshop_id: int
     client_id: int
     vehicle_id: int
     entry_date: date

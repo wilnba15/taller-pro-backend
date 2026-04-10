@@ -8,6 +8,7 @@ class WorkOrder(Base):
     __tablename__ = "work_orders"
 
     id = Column(Integer, primary_key=True, index=True)
+    workshop_id = Column(Integer, ForeignKey("workshops.id"), nullable=False, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=False)
 
@@ -27,5 +28,6 @@ class WorkOrder(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
+    workshop = relationship("Workshop", back_populates="work_orders")
     client = relationship("Client", back_populates="work_orders")
     vehicle = relationship("Vehicle", back_populates="work_orders")

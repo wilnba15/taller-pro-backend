@@ -4,6 +4,7 @@ from datetime import datetime
 
 
 class ClientBase(BaseModel):
+    workshop_id: int
     full_name: str
     identification: str
     phone: str
