@@ -1,6 +1,12 @@
 from fastapi import FastAPI
 from app.database import Base, engine
-from app.models import workshop, client, vehicle, work_order
+
+# Importar los modelos UNA sola vez
+from app.models.workshop import Workshop
+from app.models.client import Client
+from app.models.vehicle import Vehicle
+from app.models.work_order import WorkOrder
+
 from app.routers.workshops import router as workshops_router
 from app.routers.clients import router as clients_router
 from app.routers.vehicles import router as vehicles_router
