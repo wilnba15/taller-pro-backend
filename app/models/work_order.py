@@ -31,3 +31,4 @@ class WorkOrder(Base):
     workshop = relationship("Workshop", back_populates="work_orders")
     client = relationship("Client", back_populates="work_orders")
     vehicle = relationship("Vehicle", back_populates="work_orders")
+    photos = relationship("WorkOrderPhoto", back_populates="work_order", cascade="all, delete-orphan")
