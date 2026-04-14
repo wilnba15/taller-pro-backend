@@ -37,3 +37,13 @@ def list_work_order_photos(work_order_id: int, db: Session = Depends(get_db)):
         .all()
     )
     return photos
+
+@router.delete("/{photo_id}")
+def delete_work_order_photo(photo_id: int, db: Session = Depends(get_db)):
+    photo = db.query(WorkOrderPhoto).filter(WorkOrderPhoto.id == photo_id).first()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Foto no encontrada")
+
+    db.delete(photo)
+    db.commit()
+    return {"message": "Foto eliminada correctamente"}
