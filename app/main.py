@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
 
-# Importar los modelos UNA sola vez
 from app.models.workshop import Workshop  # noqa: F401
 from app.models.client import Client  # noqa: F401
 from app.models.vehicle import Vehicle  # noqa: F401
@@ -16,19 +15,19 @@ from app.routers.vehicles import router as vehicles_router
 from app.routers.work_orders import router as work_orders_router
 from app.routers.work_order_photos import router as work_order_photos_router
 
+# 🔥 NUEVO IMPORT IA
+from app.routers.ai_mechanic import router as ai_mechanic_router
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Taller PRO API",
     version="1.0.0",
-    description="API multi-tenant para la administración de talleres automotrices",
 )
 
-# CORS para desarrollo local + frontend desplegado
 origins = [
     "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://tallerpro-frontend.vercel.app",  # cámbialo por tu dominio real cuando deployes
+    "https://tallerpro-frontend.vercel.app",
 ]
 
 app.add_middleware(
@@ -45,7 +44,9 @@ app.include_router(vehicles_router)
 app.include_router(work_orders_router)
 app.include_router(work_order_photos_router)
 
+# 🔥 NUEVO ROUTER IA
+app.include_router(ai_mechanic_router)
 
 @app.get("/")
 def root():
-    return {"message": "Taller PRO API multi-tenant funcionando correctamente"}
+    return {"message": "Taller PRO API funcionando"}
