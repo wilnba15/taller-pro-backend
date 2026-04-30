@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, Numeric, DateTime, ForeignKey, func
-from app.db.base_class import Base
+from app.database import Base
 
 
 class WorkOrderItem(Base):
