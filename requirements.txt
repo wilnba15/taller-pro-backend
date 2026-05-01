@@ -6,3 +6,4 @@ python-dotenv
 pydantic
 email-validator
 openai
+reportlab==4.0.8
