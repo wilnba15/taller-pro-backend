@@ -80,6 +80,7 @@ def list_work_orders(db: Session = Depends(get_db)):
     return db.query(WorkOrder).order_by(WorkOrder.id.desc()).all()
 
 
+@router.get("/invoice/{work_order_id}/pdf")
 @router.get("/{work_order_id}/invoice-pdf")
 def generate_invoice_pdf(work_order_id: int, db: Session = Depends(get_db)):
     work_order = db.query(WorkOrder).filter(WorkOrder.id == work_order_id).first()
