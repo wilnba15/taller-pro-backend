@@ -9,6 +9,7 @@ from app.models.vehicle import Vehicle  # noqa: F401
 from app.models.work_order import WorkOrder  # noqa: F401
 from app.models.work_order_photo import WorkOrderPhoto
 from app.models.work_order_item import WorkOrderItem  # noqa: F401
+from app.models.user import User
 
 from app.routers.workshops import router as workshops_router
 from app.routers.clients import router as clients_router
