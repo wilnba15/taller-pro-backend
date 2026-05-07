@@ -4,6 +4,8 @@ from app.database import get_db
 from app.models.vehicle import Vehicle
 from app.models.client import Client
 from app.models.workshop import Workshop
+from app.models.user import User
+from app.core.security import get_current_user
 from app.schemas.vehicle import VehicleCreate, VehicleUpdate, VehicleResponse
 
 router = APIRouter(prefix="/vehicles", tags=["Vehicles"])
@@ -37,8 +39,16 @@ def create_vehicle(vehicle: VehicleCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[VehicleResponse])
-def list_vehicles(db: Session = Depends(get_db)):
-    return db.query(Vehicle).order_by(Vehicle.id.desc()).all()
+def list_vehicles(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return (
+        db.query(Vehicle)
+        .filter(Vehicle.workshop_id == current_user.workshop_id)
+        .order_by(Vehicle.id.desc())
+        .all()
+    )
 
 
 @router.get("/{vehicle_id}", response_model=VehicleResponse)

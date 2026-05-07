@@ -24,6 +24,8 @@ from app.models.client import Client
 from app.models.vehicle import Vehicle
 from app.models.workshop import Workshop
 from app.models.work_order_item import WorkOrderItem
+from app.models.user import User
+from app.core.security import get_current_user
 from app.schemas.work_order import WorkOrderCreate, WorkOrderUpdate, WorkOrderResponse
 
 router = APIRouter(prefix="/work-orders", tags=["Work Orders"])
@@ -76,8 +78,16 @@ def create_work_order(work_order: WorkOrderCreate, db: Session = Depends(get_db)
 
 
 @router.get("/", response_model=list[WorkOrderResponse])
-def list_work_orders(db: Session = Depends(get_db)):
-    return db.query(WorkOrder).order_by(WorkOrder.id.desc()).all()
+def list_work_orders(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return (
+        db.query(WorkOrder)
+        .filter(WorkOrder.workshop_id == current_user.workshop_id)
+        .order_by(WorkOrder.id.desc())
+        .all()
+    )
 
 
 @router.get("/invoice/{work_order_id}/pdf")

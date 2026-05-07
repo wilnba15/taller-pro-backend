@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.client import Client
 from app.models.workshop import Workshop
+from app.models.user import User
+from app.core.security import get_current_user
 from app.schemas.client import ClientCreate, ClientUpdate, ClientResponse
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
@@ -29,8 +31,16 @@ def create_client(client: ClientCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[ClientResponse])
-def list_clients(db: Session = Depends(get_db)):
-    return db.query(Client).order_by(Client.id.desc()).all()
+def list_clients(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return (
+        db.query(Client)
+        .filter(Client.workshop_id == current_user.workshop_id)
+        .order_by(Client.id.desc())
+        .all()
+    )
 
 
 @router.get("/{client_id}", response_model=ClientResponse)
