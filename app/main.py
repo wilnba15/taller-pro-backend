@@ -17,6 +17,7 @@ from app.routers.vehicles import router as vehicles_router
 from app.routers.work_orders import router as work_orders_router
 from app.routers.work_order_photos import router as work_order_photos_router
 from app.routers.work_order_items import router as work_order_items_router
+from app.routers.auth import router as auth_router
 
 # 🔥 NUEVO IMPORT IA
 from app.routers.ai_mechanic import router as ai_mechanic_router
@@ -47,6 +48,7 @@ app.include_router(vehicles_router)
 app.include_router(work_orders_router)
 app.include_router(work_order_photos_router)
 app.include_router(work_order_items_router)
+app.include_router(auth_router)
 
 # 🔥 NUEVO ROUTER IA
 app.include_router(ai_mechanic_router)
