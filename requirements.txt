@@ -7,3 +7,8 @@ pydantic
 email-validator
 openai
 reportlab==4.0.8
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+email-validator
+bcrypt==4.0.1
