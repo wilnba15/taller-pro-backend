@@ -91,7 +91,7 @@ def create_work_order(
     db_work_order = WorkOrder(
         **work_order.model_dump(),
         workshop_id=workshop_id,
-        total=Decimal(work_order.labor_cost) + Decimal(work_order.parts_cost),
+        total=labor_cost + parts_cost,
     )
     db.add(db_work_order)
     db.commit()
@@ -130,6 +130,27 @@ def generate_invoice_pdf(
         .order_by(WorkOrderItem.id.asc())
         .all()
     )
+
+    # Fuente real de valores: work_order_items.
+    # Esto evita que el PDF muestre $0.00 cuando la OT ya tiene ítems guardados.
+    labor_total = sum(
+        Decimal(item.subtotal or 0)
+        for item in items
+        if item.item_type == "mano_obra"
+    )
+    parts_total = sum(
+        Decimal(item.subtotal or 0)
+        for item in items
+        if item.item_type == "repuesto"
+    )
+    grand_total = labor_total + parts_total
+
+    # Mantener sincronizada la orden principal para listado, WhatsApp y futuras consultas.
+    work_order.labor_cost = labor_total
+    work_order.parts_cost = parts_total
+    work_order.total = grand_total
+    db.commit()
+    db.refresh(work_order)
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -207,7 +228,11 @@ def generate_invoice_pdf(
     story.append(items_table)
     story.append(Spacer(1, 0.35 * cm))
 
-    totals_data = [["Mano de obra", money(work_order.labor_cost)], ["Repuestos", money(work_order.parts_cost)], ["TOTAL", money(work_order.total)]]
+    totals_data = [
+        ["Mano de obra", money(labor_total)],
+        ["Repuestos", money(parts_total)],
+        ["TOTAL", money(grand_total)],
+    ]
     totals_table = Table(totals_data, colWidths=[5 * cm, 4 * cm], hAlign="RIGHT")
     totals_table.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
@@ -273,7 +298,11 @@ def update_work_order(
         setattr(work_order, key, value)
 
     work_order.workshop_id = current_user.workshop_id
-    work_order.total = Decimal(data.labor_cost or 0) + Decimal(data.parts_cost or 0)
+    labor_cost = Decimal(data.labor_cost or 0)
+    parts_cost = Decimal(data.parts_cost or 0)
+    work_order.labor_cost = labor_cost
+    work_order.parts_cost = parts_cost
+    work_order.total = labor_cost + parts_cost
 
     db.commit()
     db.refresh(work_order)
