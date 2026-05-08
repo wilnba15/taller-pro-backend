@@ -4,6 +4,7 @@ from datetime import datetime
 
 
 class VehicleBase(BaseModel):
+    workshop_id: int
     client_id: int
     plate: str
     brand: str
@@ -26,7 +27,6 @@ class VehicleUpdate(VehicleBase):
 
 class VehicleResponse(VehicleBase):
     id: int
-    workshop_id: int
     created_at: datetime
 
     class Config:

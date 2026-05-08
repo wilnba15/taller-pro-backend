@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.vehicle import Vehicle
 from app.models.client import Client
-from app.models.workshop import Workshop
 from app.models.user import User
 from app.core.security import get_current_user
 from app.schemas.vehicle import VehicleCreate, VehicleUpdate, VehicleResponse
@@ -11,27 +10,41 @@ from app.schemas.vehicle import VehicleCreate, VehicleUpdate, VehicleResponse
 router = APIRouter(prefix="/vehicles", tags=["Vehicles"])
 
 
+def _normalize_plate(plate: str) -> str:
+    return plate.strip().upper()
+
+
 @router.post("/", response_model=VehicleResponse)
-def create_vehicle(vehicle: VehicleCreate, db: Session = Depends(get_db)):
-    workshop = db.query(Workshop).filter(Workshop.id == vehicle.workshop_id).first()
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Taller no encontrado")
+def create_vehicle(
+    vehicle: VehicleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    workshop_id = current_user.workshop_id
 
-    client = db.query(Client).filter(Client.id == vehicle.client_id).first()
+    client = (
+        db.query(Client)
+        .filter(Client.id == vehicle.client_id, Client.workshop_id == workshop_id)
+        .first()
+    )
     if not client:
-        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+        raise HTTPException(status_code=404, detail="Cliente no encontrado en este taller")
 
-    if client.workshop_id != vehicle.workshop_id:
-        raise HTTPException(status_code=400, detail="El cliente no pertenece al taller seleccionado")
+    plate = _normalize_plate(vehicle.plate)
 
-    existing_plate = db.query(Vehicle).filter(
-        Vehicle.workshop_id == vehicle.workshop_id,
-        Vehicle.plate == vehicle.plate
-    ).first()
+    existing_plate = (
+        db.query(Vehicle)
+        .filter(Vehicle.workshop_id == workshop_id, Vehicle.plate == plate)
+        .first()
+    )
     if existing_plate:
         raise HTTPException(status_code=400, detail="La placa ya está registrada en este taller")
 
-    db_vehicle = Vehicle(**vehicle.model_dump())
+    data = vehicle.model_dump()
+    data["plate"] = plate
+    data["workshop_id"] = workshop_id
+
+    db_vehicle = Vehicle(**data)
     db.add(db_vehicle)
     db.commit()
     db.refresh(db_vehicle)
@@ -52,39 +65,65 @@ def list_vehicles(
 
 
 @router.get("/{vehicle_id}", response_model=VehicleResponse)
-def get_vehicle(vehicle_id: int, db: Session = Depends(get_db)):
-    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+def get_vehicle(
+    vehicle_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id, Vehicle.workshop_id == current_user.workshop_id)
+        .first()
+    )
     if not vehicle:
-        raise HTTPException(status_code=404, detail="Vehículo no encontrado")
+        raise HTTPException(status_code=404, detail="Vehículo no encontrado en este taller")
     return vehicle
 
 
 @router.put("/{vehicle_id}", response_model=VehicleResponse)
-def update_vehicle(vehicle_id: int, data: VehicleUpdate, db: Session = Depends(get_db)):
-    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+def update_vehicle(
+    vehicle_id: int,
+    data: VehicleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    workshop_id = current_user.workshop_id
+
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id, Vehicle.workshop_id == workshop_id)
+        .first()
+    )
     if not vehicle:
-        raise HTTPException(status_code=404, detail="Vehículo no encontrado")
+        raise HTTPException(status_code=404, detail="Vehículo no encontrado en este taller")
 
-    workshop = db.query(Workshop).filter(Workshop.id == data.workshop_id).first()
-    if not workshop:
-        raise HTTPException(status_code=404, detail="Taller no encontrado")
-
-    client = db.query(Client).filter(Client.id == data.client_id).first()
+    client = (
+        db.query(Client)
+        .filter(Client.id == data.client_id, Client.workshop_id == workshop_id)
+        .first()
+    )
     if not client:
-        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+        raise HTTPException(status_code=404, detail="Cliente no encontrado en este taller")
 
-    if client.workshop_id != data.workshop_id:
-        raise HTTPException(status_code=400, detail="El cliente no pertenece al taller seleccionado")
+    plate = _normalize_plate(data.plate)
 
-    existing_plate = db.query(Vehicle).filter(
-        Vehicle.workshop_id == data.workshop_id,
-        Vehicle.plate == data.plate,
-        Vehicle.id != vehicle_id
-    ).first()
+    existing_plate = (
+        db.query(Vehicle)
+        .filter(
+            Vehicle.workshop_id == workshop_id,
+            Vehicle.plate == plate,
+            Vehicle.id != vehicle_id,
+        )
+        .first()
+    )
     if existing_plate:
         raise HTTPException(status_code=400, detail="La placa ya está registrada en este taller")
 
-    for key, value in data.model_dump().items():
+    update_data = data.model_dump()
+    update_data["plate"] = plate
+    update_data["workshop_id"] = workshop_id
+
+    for key, value in update_data.items():
         setattr(vehicle, key, value)
 
     db.commit()
@@ -93,10 +132,18 @@ def update_vehicle(vehicle_id: int, data: VehicleUpdate, db: Session = Depends(g
 
 
 @router.delete("/{vehicle_id}")
-def delete_vehicle(vehicle_id: int, db: Session = Depends(get_db)):
-    vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+def delete_vehicle(
+    vehicle_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    vehicle = (
+        db.query(Vehicle)
+        .filter(Vehicle.id == vehicle_id, Vehicle.workshop_id == current_user.workshop_id)
+        .first()
+    )
     if not vehicle:
-        raise HTTPException(status_code=404, detail="Vehículo no encontrado")
+        raise HTTPException(status_code=404, detail="Vehículo no encontrado en este taller")
 
     db.delete(vehicle)
     db.commit()
