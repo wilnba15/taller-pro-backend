@@ -91,9 +91,7 @@ def create_work_order(
     db_work_order = WorkOrder(
         **work_order.model_dump(),
         workshop_id=workshop_id,
-        labor_cost=labor_cost,
-        parts_cost=parts_cost,
-        total=labor_cost + parts_cost,
+        total=Decimal(work_order.labor_cost) + Decimal(work_order.parts_cost),
     )
     db.add(db_work_order)
     db.commit()
