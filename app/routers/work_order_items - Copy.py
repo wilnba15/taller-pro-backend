@@ -1,7 +1,6 @@
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from app.database import get_db
 from app.models.work_order import WorkOrder
@@ -51,69 +50,19 @@ def create_item(
     unit_price = Decimal(str(item.get("unit_price") or 0))
     subtotal = Decimal(str(item.get("subtotal") or (quantity * unit_price)))
 
-    next_service_km = item.get("next_service_km")
-    next_service_date = item.get("next_service_date")
-    reminder_enabled = item.get("reminder_enabled")
-    if reminder_enabled is None:
-        reminder_enabled = True
-
-    insert_query = text("""
-        INSERT INTO work_order_items (
-            work_order_id,
-            item_type,
-            description,
-            quantity,
-            unit_price,
-            subtotal,
-            next_service_km,
-            next_service_date,
-            reminder_enabled
-        )
-        VALUES (
-            :work_order_id,
-            :item_type,
-            :description,
-            :quantity,
-            :unit_price,
-            :subtotal,
-            :next_service_km,
-            :next_service_date,
-            :reminder_enabled
-        )
-        RETURNING
-            id,
-            work_order_id,
-            item_type,
-            description,
-            quantity,
-            unit_price,
-            subtotal,
-            next_service_km,
-            next_service_date,
-            reminder_enabled,
-            reminder_sent,
-            created_at
-    """)
-
-    db_item = db.execute(
-        insert_query,
-        {
-            "work_order_id": work_order.id,
-            "item_type": item.get("item_type"),
-            "description": item.get("description"),
-            "quantity": quantity,
-            "unit_price": unit_price,
-            "subtotal": subtotal,
-            "next_service_km": int(next_service_km) if next_service_km not in [None, ""] else None,
-            "next_service_date": next_service_date or None,
-            "reminder_enabled": reminder_enabled,
-        },
-    ).mappings().first()
-
+    db_item = WorkOrderItem(
+        work_order_id=work_order.id,
+        item_type=item.get("item_type"),
+        description=item.get("description"),
+        quantity=quantity,
+        unit_price=unit_price,
+        subtotal=subtotal,
+    )
+    db.add(db_item)
     recalculate_order_totals(work_order, db)
     db.commit()
-
-    return dict(db_item)
+    db.refresh(db_item)
+    return db_item
 
 
 @router.get("/work-order/{order_id}")
@@ -123,28 +72,12 @@ def get_items(
     current_user: User = Depends(get_current_user),
 ):
     get_owned_work_order(order_id, db, current_user)
-
-    query = text("""
-        SELECT
-            id,
-            work_order_id,
-            item_type,
-            description,
-            quantity,
-            unit_price,
-            subtotal,
-            next_service_km,
-            next_service_date,
-            reminder_enabled,
-            reminder_sent,
-            created_at
-        FROM work_order_items
-        WHERE work_order_id = :order_id
-        ORDER BY id ASC
-    """)
-
-    rows = db.execute(query, {"order_id": order_id}).mappings().all()
-    return [dict(row) for row in rows]
+    return (
+        db.query(WorkOrderItem)
+        .filter(WorkOrderItem.work_order_id == order_id)
+        .order_by(WorkOrderItem.id.asc())
+        .all()
+    )
 
 
 @router.delete("/{item_id}")
