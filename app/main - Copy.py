@@ -23,6 +23,7 @@ from app.routers.auth import router as auth_router
 from app.routers.ai_mechanic import router as ai_mechanic_router
 from app.routers.swm import router as swm_router
 from app.routers.swm_auth import router as swm_auth_router
+from app.routers.vehicle_life_report import router as vehicle_life_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -52,6 +53,7 @@ app.include_router(auth_router)
 app.include_router(ai_mechanic_router)
 app.include_router(swm_auth_router)
 app.include_router(swm_router)
+app.include_router(vehicle_life_router)
 
 
 @app.get("/")
