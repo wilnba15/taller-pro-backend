@@ -40,6 +40,7 @@ class SwmVehicle(Base):
     fuel_type = Column(String(50), nullable=True, default="Gasolina")
     purchase_date = Column(Date, nullable=True)
     nickname = Column(String(80), nullable=True)
+    photo_url = Column(String(500), nullable=True)
 
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -54,6 +55,12 @@ class SwmVehicle(Base):
 
     service_orders = relationship(
         "SwmServiceOrder",
+        back_populates="vehicle",
+        cascade="all, delete-orphan",
+    )
+
+    fuel_records = relationship(
+        "SwmFuelRecord",
         back_populates="vehicle",
         cascade="all, delete-orphan",
     )
@@ -154,6 +161,25 @@ class SwmServiceRecord(Base):
     vehicle = relationship("SwmVehicle", back_populates="service_records")
     service_order = relationship("SwmServiceOrder", back_populates="records")
     schedule = relationship("SwmMaintenanceSchedule", back_populates="service_records")
+
+
+class SwmFuelRecord(Base):
+    __tablename__ = "swm_fuel_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vehicle_id = Column(
+        Integer,
+        ForeignKey("swm_vehicles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    fuel_date = Column(Date, nullable=False, index=True)
+    mileage = Column(Integer, nullable=False)
+    amount = Column(Numeric(10, 2), nullable=False, default=0)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    vehicle = relationship("SwmVehicle", back_populates="fuel_records")
 
 
 class SwmAiQuery(Base):
