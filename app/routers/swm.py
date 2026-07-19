@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.models.swm import (
     SwmAiQuery,
+    SwmFuelRecord,
     SwmMaintenanceSchedule,
     SwmServiceOrder,
     SwmServiceRecord,
@@ -23,6 +24,9 @@ from app.schemas.swm import (
     SwmAiQueryCreate,
     SwmAiQueryResponse,
     SwmDashboardResponse,
+    SwmFuelRecordCreate,
+    SwmFuelRecordResponse,
+    SwmFuelRecordUpdate,
     SwmMaintenanceResponse,
     SwmServiceOrderCreate,
     SwmServiceOrderResponse,
@@ -86,6 +90,30 @@ def user_owns_vehicle_or_404(
 
     return vehicle
 
+
+
+def fuel_record_or_404(
+    fuel_record_id: int,
+    current_user: SwmUser,
+    db: Session,
+) -> SwmFuelRecord:
+    fuel_record = (
+        db.query(SwmFuelRecord)
+        .join(SwmVehicle, SwmFuelRecord.vehicle_id == SwmVehicle.id)
+        .filter(
+            SwmFuelRecord.id == fuel_record_id,
+            SwmVehicle.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not fuel_record:
+        raise HTTPException(
+            status_code=404,
+            detail="Registro de combustible no encontrado.",
+        )
+
+    return fuel_record
 
 def get_next_maintenance_mileage(current_mileage: int, db: Session) -> Optional[int]:
     next_schedule = (
@@ -710,6 +738,102 @@ def create_unscheduled_event(
     db.commit()
 
     return service_order
+
+
+
+# =========================
+# COMBUSTIBLE
+# =========================
+
+@router.post(
+    "/fuel",
+    response_model=SwmFuelRecordResponse,
+    status_code=201,
+)
+def create_fuel_record(
+    payload: SwmFuelRecordCreate,
+    db: Session = Depends(get_db),
+    current_user: SwmUser = Depends(get_current_swm_user),
+):
+    vehicle = user_owns_vehicle_or_404(payload.vehicle_id, current_user, db)
+
+    fuel_record = SwmFuelRecord(**payload.model_dump())
+    db.add(fuel_record)
+
+    if payload.mileage > vehicle.current_mileage:
+        vehicle.current_mileage = payload.mileage
+
+    db.commit()
+    db.refresh(fuel_record)
+    return fuel_record
+
+
+@router.get(
+    "/vehicles/{vehicle_id}/fuel",
+    response_model=list[SwmFuelRecordResponse],
+)
+def get_vehicle_fuel_records(
+    vehicle_id: int,
+    db: Session = Depends(get_db),
+    current_user: SwmUser = Depends(get_current_swm_user),
+):
+    user_owns_vehicle_or_404(vehicle_id, current_user, db)
+
+    return (
+        db.query(SwmFuelRecord)
+        .filter(SwmFuelRecord.vehicle_id == vehicle_id)
+        .order_by(
+            SwmFuelRecord.fuel_date.desc(),
+            SwmFuelRecord.id.desc(),
+        )
+        .all()
+    )
+
+
+@router.put(
+    "/fuel/{fuel_record_id}",
+    response_model=SwmFuelRecordResponse,
+)
+def update_fuel_record(
+    fuel_record_id: int,
+    payload: SwmFuelRecordUpdate,
+    db: Session = Depends(get_db),
+    current_user: SwmUser = Depends(get_current_swm_user),
+):
+    fuel_record = fuel_record_or_404(fuel_record_id, current_user, db)
+    update_data = payload.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
+        setattr(fuel_record, field, value)
+
+    vehicle = user_owns_vehicle_or_404(
+        fuel_record.vehicle_id,
+        current_user,
+        db,
+    )
+
+    if (
+        payload.mileage is not None
+        and payload.mileage > vehicle.current_mileage
+    ):
+        vehicle.current_mileage = payload.mileage
+
+    db.commit()
+    db.refresh(fuel_record)
+    return fuel_record
+
+
+@router.delete("/fuel/{fuel_record_id}", status_code=204)
+def delete_fuel_record(
+    fuel_record_id: int,
+    db: Session = Depends(get_db),
+    current_user: SwmUser = Depends(get_current_swm_user),
+):
+    fuel_record = fuel_record_or_404(fuel_record_id, current_user, db)
+    db.delete(fuel_record)
+    db.commit()
+    return Response(status_code=204)
+
 
 
 @router.post("/ai/query", response_model=SwmAiQueryResponse, status_code=201)

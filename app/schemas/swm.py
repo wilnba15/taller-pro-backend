@@ -25,6 +25,7 @@ class SwmVehicleBase(BaseModel):
     fuel_type: Optional[str] = Field(default="Gasolina", max_length=50)
     purchase_date: Optional[date] = None
     nickname: Optional[str] = Field(default=None, max_length=80)
+    photo_url: Optional[str] = Field(default=None, max_length=500)
 
 
 class SwmVehicleCreate(SwmVehicleBase):
@@ -47,6 +48,7 @@ class SwmVehicleUpdate(BaseModel):
     fuel_type: Optional[str] = Field(default=None, max_length=50)
     purchase_date: Optional[date] = None
     nickname: Optional[str] = Field(default=None, max_length=80)
+    photo_url: Optional[str] = Field(default=None, max_length=500)
 
 
 class SwmVehicleResponse(SwmVehicleBase):
@@ -164,6 +166,38 @@ class SwmMaintenanceResponse(BaseModel):
     current_maintenance_mileage: Optional[int] = None
     next_maintenance_mileage: Optional[int] = None
     items: list[SwmMaintenanceItemStatus]
+
+
+
+# =========================
+# COMBUSTIBLE
+# =========================
+
+class SwmFuelRecordBase(BaseModel):
+    vehicle_id: int = Field(..., gt=0)
+    fuel_date: date
+    mileage: int = Field(..., ge=0)
+    amount: Decimal = Field(default=Decimal("0.00"), ge=0)
+    notes: Optional[str] = None
+
+
+class SwmFuelRecordCreate(SwmFuelRecordBase):
+    pass
+
+
+class SwmFuelRecordUpdate(BaseModel):
+    fuel_date: Optional[date] = None
+    mileage: Optional[int] = Field(default=None, ge=0)
+    amount: Optional[Decimal] = Field(default=None, ge=0)
+    notes: Optional[str] = None
+
+
+class SwmFuelRecordResponse(SwmFuelRecordBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 # =========================
