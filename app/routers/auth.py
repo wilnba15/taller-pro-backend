@@ -101,10 +101,7 @@ def setup_first_user(
 # LOGIN
 # =========================================
 
-@router.post(
-    "/login",
-    response_model=TokenResponse
-)
+@router.post("/login")
 def login(
     credentials: UserLogin,
     db: Session = Depends(get_db)
@@ -145,5 +142,6 @@ def login(
         "access_token": access_token,
         "token_type": "bearer",
         "workshop_id": user.workshop_id,
-        "user_name": user.full_name
+        "user_name": user.full_name,
+        "role": user.role
     }
