@@ -1,8 +1,13 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
+
+# =========================
+# VEHÍCULOS
+# =========================
 
 class SwmVehicleBase(BaseModel):
     owner_name: Optional[str] = Field(default=None, max_length=120)
@@ -13,6 +18,7 @@ class SwmVehicleBase(BaseModel):
     city: Optional[str] = Field(default=None, max_length=80)
     usage_type: Optional[str] = Field(default=None, max_length=80)
     current_mileage: int = Field(default=0, ge=0)
+
     plate: Optional[str] = Field(default=None, max_length=30)
     vin: Optional[str] = Field(default=None, max_length=80)
     color: Optional[str] = Field(default=None, max_length=50)
@@ -34,6 +40,7 @@ class SwmVehicleUpdate(BaseModel):
     city: Optional[str] = Field(default=None, max_length=80)
     usage_type: Optional[str] = Field(default=None, max_length=80)
     current_mileage: Optional[int] = Field(default=None, ge=0)
+
     plate: Optional[str] = Field(default=None, max_length=30)
     vin: Optional[str] = Field(default=None, max_length=80)
     color: Optional[str] = Field(default=None, max_length=50)
@@ -47,9 +54,14 @@ class SwmVehicleResponse(SwmVehicleBase):
     user_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+
     class Config:
         from_attributes = True
 
+
+# =========================
+# CALENDARIO
+# =========================
 
 class SwmMaintenanceScheduleResponse(BaseModel):
     id: int
@@ -59,13 +71,23 @@ class SwmMaintenanceScheduleResponse(BaseModel):
     category: Optional[str] = None
     description: Optional[str] = None
     is_required: bool
+
     class Config:
         from_attributes = True
 
 
-class SwmServiceOrderCreate(BaseModel):
+# =========================
+# ÓRDENES / HISTORIAL
+# =========================
+
+class SwmServiceOrderBase(BaseModel):
     vehicle_id: int = Field(..., gt=0)
     order_number: Optional[str] = Field(default=None, max_length=50)
+
+    order_type: str = Field(default="maintenance", max_length=50)
+    title: Optional[str] = Field(default=None, max_length=180)
+    description: Optional[str] = None
+
     service_mileage: int = Field(..., ge=0)
     service_date: date
     workshop: Optional[str] = Field(default=None, max_length=150)
@@ -78,9 +100,14 @@ class SwmServiceOrderCreate(BaseModel):
     notes: Optional[str] = None
 
 
-class SwmServiceOrderResponse(SwmServiceOrderCreate):
+class SwmServiceOrderCreate(SwmServiceOrderBase):
+    pass
+
+
+class SwmServiceOrderResponse(SwmServiceOrderBase):
     id: int
     created_at: datetime
+
     class Config:
         from_attributes = True
 
@@ -102,9 +129,18 @@ class SwmServiceRecordResponse(SwmServiceRecordCreate):
     item_name: Optional[str] = None
     item_code: Optional[str] = None
     category: Optional[str] = None
+    order_type: Optional[str] = None
+    order_title: Optional[str] = None
+    order_description: Optional[str] = None
+    order_total_cost: Optional[Decimal] = None
+
     class Config:
         from_attributes = True
 
+
+# =========================
+# DASHBOARD / MANTENIMIENTO
+# =========================
 
 class SwmMaintenanceItemStatus(SwmMaintenanceScheduleResponse):
     status: str
@@ -130,6 +166,10 @@ class SwmMaintenanceResponse(BaseModel):
     items: list[SwmMaintenanceItemStatus]
 
 
+# =========================
+# SWM CARE IA
+# =========================
+
 class SwmAiQueryCreate(BaseModel):
     vehicle_id: Optional[int] = Field(default=None, gt=0)
     symptom: str = Field(..., min_length=3)
@@ -141,5 +181,6 @@ class SwmAiQueryResponse(BaseModel):
     symptom: str
     ai_response: Optional[str] = None
     created_at: datetime
+
     class Config:
         from_attributes = True

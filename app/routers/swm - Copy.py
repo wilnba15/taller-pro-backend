@@ -608,7 +608,7 @@ def get_vehicle_history(
 
     records = (
         db.query(SwmServiceRecord)
-        .options(joinedload(SwmServiceRecord.schedule))
+        .options(joinedload(SwmServiceRecord.schedule), joinedload(SwmServiceRecord.service_order))
         .filter(SwmServiceRecord.vehicle_id == vehicle_id)
         .order_by(
             SwmServiceRecord.service_date.desc(),
@@ -632,6 +632,10 @@ def get_vehicle_history(
             "item_name": record.schedule.item_name if record.schedule else None,
             "item_code": record.schedule.item_code if record.schedule else None,
             "category": record.schedule.category if record.schedule else None,
+            "order_type": record.service_order.order_type if record.service_order else None,
+            "order_title": record.service_order.title if record.service_order else None,
+            "order_description": record.service_order.description if record.service_order else None,
+            "order_total_cost": record.service_order.total_cost if record.service_order else None,
         }
         for record in records
     ]
@@ -648,7 +652,7 @@ def download_maintenance_pdf(
 
     records = (
         db.query(SwmServiceRecord)
-        .options(joinedload(SwmServiceRecord.schedule))
+        .options(joinedload(SwmServiceRecord.schedule), joinedload(SwmServiceRecord.service_order))
         .filter(
             SwmServiceRecord.vehicle_id == vehicle.id,
             SwmServiceRecord.service_mileage == mileage,
@@ -665,6 +669,47 @@ def download_maintenance_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+
+
+@router.post("/events", response_model=SwmServiceOrderResponse, status_code=201)
+def create_unscheduled_event(
+    payload: SwmServiceOrderCreate,
+    db: Session = Depends(get_db),
+    current_user: SwmUser = Depends(get_current_swm_user),
+):
+    user_owns_vehicle_or_404(payload.vehicle_id, current_user, db)
+
+    event_data = payload.model_dump()
+    if event_data.get("order_type") == "maintenance":
+        event_data["order_type"] = "repair"
+
+    service_order = SwmServiceOrder(**event_data)
+    db.add(service_order)
+    db.commit()
+    db.refresh(service_order)
+
+    if not service_order.order_number:
+        service_order.order_number = f"EVT-{service_order.id:06d}"
+        db.commit()
+        db.refresh(service_order)
+
+    service_record = SwmServiceRecord(
+        vehicle_id=service_order.vehicle_id,
+        service_order_id=service_order.id,
+        schedule_id=None,
+        service_mileage=service_order.service_mileage,
+        service_date=service_order.service_date,
+        workshop=service_order.workshop,
+        cost=service_order.total_cost,
+        notes=service_order.description or service_order.notes or service_order.title,
+    )
+
+    db.add(service_record)
+    db.commit()
+
+    return service_order
 
 
 @router.post("/ai/query", response_model=SwmAiQueryResponse, status_code=201)
