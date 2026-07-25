@@ -1,6 +1,8 @@
 from decimal import Decimal
 from io import BytesIO
 from datetime import datetime
+from html import escape
+from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,7 +13,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import Image, SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 from app.database import get_db
 from app.models.work_order import WorkOrder
@@ -35,6 +37,33 @@ def money(value) -> str:
 
 def safe(value, fallback="-") -> str:
     return str(value) if value not in [None, ""] else fallback
+
+
+def paragraph_text(value, fallback="-") -> str:
+    return escape(safe(value, fallback))
+
+
+def load_remote_logo(logo_url: str | None):
+    if not logo_url:
+        return None
+
+    try:
+        request = Request(
+            logo_url,
+            headers={"User-Agent": "SIADAUTO/1.0"},
+        )
+        with urlopen(request, timeout=8) as response:
+            content = response.read()
+
+        if not content:
+            return None
+
+        image = Image(BytesIO(content))
+        image._restrictSize(4.0 * cm, 2.5 * cm)
+        return image
+    except Exception:
+        # El PDF se sigue generando aunque el logo remoto no esté disponible.
+        return None
 
 
 def get_owned_work_order(work_order_id: int, db: Session, current_user: User) -> WorkOrder:
@@ -170,8 +199,50 @@ def generate_invoice_pdf(
     story = []
 
     workshop_name = safe(getattr(workshop, "name", None), "SIADAUTO / Taller PRO")
-    story.append(Paragraph(workshop_name, title_style))
-    story.append(Paragraph("Factura / Orden de Trabajo", heading))
+    business_name = getattr(workshop, "business_name", None)
+    ruc = getattr(workshop, "ruc", None)
+    phone = getattr(workshop, "phone", None)
+    email = getattr(workshop, "email", None)
+    address = getattr(workshop, "address", None)
+    footer_text = getattr(workshop, "footer_text", None)
+    logo = load_remote_logo(getattr(workshop, "logo_url", None))
+
+    workshop_lines = [f"<b>{paragraph_text(workshop_name)}</b>"]
+    if business_name and business_name != workshop_name:
+        workshop_lines.append(paragraph_text(business_name))
+    if ruc:
+        workshop_lines.append(f"RUC: {paragraph_text(ruc)}")
+
+    contact_parts = [paragraph_text(value) for value in (phone, email) if value]
+    if contact_parts:
+        workshop_lines.append(" · ".join(contact_parts))
+    if address:
+        workshop_lines.append(paragraph_text(address))
+
+    workshop_information = Paragraph(
+        "<br/>".join(workshop_lines),
+        normal,
+    )
+
+    brand_header = Table(
+        [[logo or "", workshop_information]],
+        colWidths=[4.5 * cm, 12.5 * cm],
+    )
+    brand_header.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (0, 0), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    story.append(brand_header)
+    story.append(Spacer(1, 0.15 * cm))
+    story.append(Paragraph("Factura / Orden de Trabajo", title_style))
     story.append(Spacer(1, 0.25 * cm))
 
     header_data = [
@@ -264,6 +335,24 @@ def generate_invoice_pdf(
     )
     signatures.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER"), ("PADDING", (0, 0), (-1, -1), 8)]))
     story.append(signatures)
+
+    if footer_text:
+        story.append(Spacer(1, 0.45 * cm))
+        footer = Table(
+            [[Paragraph(paragraph_text(footer_text), normal)]],
+            colWidths=[17 * cm],
+        )
+        footer.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("PADDING", (0, 0), (-1, -1), 8),
+                ]
+            )
+        )
+        story.append(footer)
 
     doc.build(story)
     buffer.seek(0)

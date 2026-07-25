@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -275,38 +276,103 @@ def generate_invoice_pdf(
     )
 
 
-@router.get("/{work_order_id}", response_model=WorkOrderResponse)
+@router.get("/{work_order_id}")
 def get_work_order(
     work_order_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return get_owned_work_order(work_order_id, db, current_user)
+    get_owned_work_order(work_order_id, db, current_user)
+
+    query = text("""
+        SELECT *
+        FROM work_orders
+        WHERE id = :work_order_id
+          AND workshop_id = :workshop_id
+    """)
+
+    row = db.execute(
+        query,
+        {
+            "work_order_id": work_order_id,
+            "workshop_id": current_user.workshop_id,
+        },
+    ).mappings().first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada")
+
+    return dict(row)
 
 
-@router.put("/{work_order_id}", response_model=WorkOrderResponse)
+@router.put("/{work_order_id}")
 def update_work_order(
     work_order_id: int,
-    data: WorkOrderUpdate,
+    data: dict,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    work_order = get_owned_work_order(work_order_id, db, current_user)
-    validate_client_and_vehicle(data.client_id, data.vehicle_id, current_user.workshop_id, db)
+    get_owned_work_order(work_order_id, db, current_user)
 
-    for key, value in data.model_dump().items():
-        setattr(work_order, key, value)
+    client_id = data.get("client_id")
+    vehicle_id = data.get("vehicle_id")
 
-    work_order.workshop_id = current_user.workshop_id
-    labor_cost = Decimal(data.labor_cost or 0)
-    parts_cost = Decimal(data.parts_cost or 0)
-    work_order.labor_cost = labor_cost
-    work_order.parts_cost = parts_cost
-    work_order.total = labor_cost + parts_cost
+    if client_id is None or vehicle_id is None:
+        raise HTTPException(status_code=400, detail="client_id y vehicle_id son obligatorios")
+
+    validate_client_and_vehicle(int(client_id), int(vehicle_id), current_user.workshop_id, db)
+
+    labor_cost = Decimal(str(data.get("labor_cost") or 0))
+    parts_cost = Decimal(str(data.get("parts_cost") or 0))
+
+    query = text("""
+        UPDATE work_orders
+        SET
+            client_id = :client_id,
+            vehicle_id = :vehicle_id,
+            current_km = :current_km,
+            entry_date = :entry_date,
+            estimated_delivery_date = :estimated_delivery_date,
+            status = :status,
+            issue_description = :issue_description,
+            diagnosis = :diagnosis,
+            work_performed = :work_performed,
+            notes = :notes,
+            labor_cost = :labor_cost,
+            parts_cost = :parts_cost,
+            total = :total
+        WHERE id = :work_order_id
+          AND workshop_id = :workshop_id
+        RETURNING *
+    """)
+
+    row = db.execute(
+        query,
+        {
+            "work_order_id": work_order_id,
+            "workshop_id": current_user.workshop_id,
+            "client_id": client_id,
+            "vehicle_id": vehicle_id,
+            "current_km": data.get("current_km"),
+            "entry_date": data.get("entry_date"),
+            "estimated_delivery_date": data.get("estimated_delivery_date"),
+            "status": data.get("status"),
+            "issue_description": data.get("issue_description"),
+            "diagnosis": data.get("diagnosis"),
+            "work_performed": data.get("work_performed"),
+            "notes": data.get("notes"),
+            "labor_cost": labor_cost,
+            "parts_cost": parts_cost,
+            "total": labor_cost + parts_cost,
+        },
+    ).mappings().first()
 
     db.commit()
-    db.refresh(work_order)
-    return work_order
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada")
+
+    return dict(row)
 
 
 @router.delete("/{work_order_id}")
