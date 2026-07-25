@@ -4,8 +4,10 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from jose import jwt
 from passlib.context import CryptContext
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.security import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.models.workshop import Workshop
@@ -22,6 +24,12 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 12
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=72)
+    new_password: str = Field(min_length=6, max_length=72)
+    confirm_password: str = Field(min_length=6, max_length=72)
 
 
 def hash_password(password: str):
@@ -82,7 +90,7 @@ def setup_first_user(
     db_user = User(
         workshop_id=user.workshop_id,
         full_name=user.full_name,
-        email=user.email,
+        email=user.email.strip().lower(),
         password_hash=hash_password(user.password),
         role="admin",
         status="active"
@@ -107,7 +115,7 @@ def login(
     db: Session = Depends(get_db)
 ):
     user = db.query(User).filter(
-        User.email == credentials.email
+        User.email == credentials.email.strip().lower()
     ).first()
 
     if not user:
@@ -144,4 +152,43 @@ def login(
         "workshop_id": user.workshop_id,
         "user_name": user.full_name,
         "role": user.role
+    }
+
+
+# =========================================
+# CAMBIAR CONTRASEÑA DEL USUARIO AUTENTICADO
+# =========================================
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if data.new_password != data.confirm_password:
+        raise HTTPException(
+            status_code=400,
+            detail="La nueva contraseña y su confirmación no coinciden",
+        )
+
+    if data.current_password == data.new_password:
+        raise HTTPException(
+            status_code=400,
+            detail="La nueva contraseña debe ser diferente de la contraseña actual",
+        )
+
+    if not verify_password(
+        data.current_password,
+        current_user.password_hash,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="La contraseña actual es incorrecta",
+        )
+
+    current_user.password_hash = hash_password(data.new_password)
+    db.commit()
+
+    return {
+        "message": "Contraseña actualizada correctamente"
     }
