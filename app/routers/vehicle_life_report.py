@@ -1,6 +1,8 @@
 from datetime import date, timedelta, datetime
 from decimal import Decimal
 from io import BytesIO
+from html import escape
+from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -13,6 +15,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import (
+    Image,
     KeepTogether,
     PageBreak,
     Paragraph,
@@ -54,6 +57,32 @@ def safe(value, fallback="-") -> str:
     if value in [None, ""]:
         return fallback
     return str(value)
+
+
+def paragraph_text(value, fallback="-") -> str:
+    return escape(safe(value, fallback))
+
+
+def load_remote_logo(logo_url: str | None):
+    if not logo_url:
+        return None
+
+    try:
+        request = Request(
+            logo_url,
+            headers={"User-Agent": "SIADAUTO/1.0"},
+        )
+        with urlopen(request, timeout=8) as response:
+            content = response.read()
+
+        if not content:
+            return None
+
+        image = Image(BytesIO(content))
+        image._restrictSize(4.2 * cm, 2.6 * cm)
+        return image
+    except Exception:
+        return None
 
 
 def service_type_label(value) -> str:
@@ -116,7 +145,14 @@ def get_vehicle_header(vehicle_id: int, workshop_id: int, db: Session):
             c.full_name AS client_name,
             c.phone AS client_phone,
             w.id AS workshop_id,
-            w.name AS workshop_name
+            w.name AS workshop_name,
+            w.business_name AS workshop_business_name,
+            w.ruc AS workshop_ruc,
+            w.phone AS workshop_phone,
+            w.email AS workshop_email,
+            w.address AS workshop_address,
+            w.logo_url AS workshop_logo_url,
+            w.footer_text AS workshop_footer_text
         FROM vehicles v
         LEFT JOIN clients c
             ON c.id = v.client_id
@@ -312,8 +348,12 @@ def generate_vehicle_life_pdf(
 
         canvas.setFont("Helvetica", 7.5)
         canvas.setFillColor(slate)
+        workshop_footer = safe(
+            header.get("workshop_footer_text"),
+            f"Generado por {safe(header.get('workshop_name'), 'SIADAUTO')}",
+        )
         footer_text = (
-            f"Generado por SIADAUTO - {datetime.now().strftime('%d/%m/%Y %H:%M')} "
+            f"{workshop_footer} - {datetime.now().strftime('%d/%m/%Y %H:%M')} "
             f"- Página {doc_obj.page}"
         )
         canvas.drawCentredString(width / 2, 0.68 * cm, footer_text)
@@ -321,43 +361,71 @@ def generate_vehicle_life_pdf(
 
     story = []
 
+    workshop_name = safe(header.get("workshop_name"), "Taller")
+    workshop_business_name = header.get("workshop_business_name")
+    workshop_ruc = header.get("workshop_ruc")
+    workshop_phone = header.get("workshop_phone")
+    workshop_email = header.get("workshop_email")
+    workshop_address = header.get("workshop_address")
+    workshop_logo = load_remote_logo(header.get("workshop_logo_url"))
+
+    workshop_lines = [f"<b>{paragraph_text(workshop_name)}</b>"]
+    if workshop_business_name and workshop_business_name != workshop_name:
+        workshop_lines.append(paragraph_text(workshop_business_name))
+    if workshop_ruc:
+        workshop_lines.append(f"RUC: {paragraph_text(workshop_ruc)}")
+
+    contact_parts = [
+        paragraph_text(value)
+        for value in (workshop_phone, workshop_email)
+        if value
+    ]
+    if contact_parts:
+        workshop_lines.append(" · ".join(contact_parts))
+    if workshop_address:
+        workshop_lines.append(paragraph_text(workshop_address))
+
+    identity_block = Paragraph(
+        "<br/>".join(workshop_lines),
+        ParagraphStyle(
+            "WorkshopIdentity",
+            parent=styles["Normal"],
+            fontSize=9,
+            leading=12,
+            textColor=dark_blue,
+        ),
+    )
+
     top = Table(
         [
             [
+                workshop_logo or "",
+                identity_block,
+            ],
+            [
+                "",
                 [
-                    Paragraph("SIADAUTO", styles["Brand"]),
                     Paragraph("Vida del Auto", styles["ReportTitle"]),
                     Paragraph(
                         "Historial inteligente de mantenimiento, reparaciones y próximos cuidados.",
                         styles["Subtitle"],
                     ),
                 ],
-                Paragraph(
-                    f"<b>{safe(header.get('workshop_name'), 'Taller')}</b><br/>"
-                    f"Reporte oficial de servicio",
-                    ParagraphStyle(
-                        "WorkshopTop",
-                        parent=styles["Normal"],
-                        fontSize=9,
-                        leading=12,
-                        textColor=dark_blue,
-                        alignment=TA_RIGHT,
-                    ),
-                ),
-            ]
+            ],
         ],
-        colWidths=[12.2 * cm, 5.3 * cm],
+        colWidths=[4.5 * cm, 13.0 * cm],
     )
     top.setStyle(
         TableStyle(
             [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("SPAN", (0, 0), (0, 1)),
                 ("BOX", (0, 0), (-1, -1), 0.8, blue),
                 ("BACKGROUND", (0, 0), (-1, -1), colors.white),
                 ("LEFTPADDING", (0, 0), (-1, -1), 14),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 14),
-                ("TOPPADDING", (0, 0), (-1, -1), 13),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 13),
+                ("TOPPADDING", (0, 0), (-1, -1), 9),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
             ]
         )
     )
