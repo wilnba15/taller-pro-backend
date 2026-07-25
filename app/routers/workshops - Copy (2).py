@@ -1,8 +1,4 @@
-import os
-
-import cloudinary
-import cloudinary.uploader
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
@@ -19,11 +15,6 @@ from app.schemas.workshop import (
 
 router = APIRouter(prefix="/workshops", tags=["Workshops"])
 
-MAX_LOGO_SIZE_BYTES = 3 * 1024 * 1024
-ALLOWED_LOGO_TYPES = {"image/jpeg", "image/png", "image/webp"}
-
-cloudinary.config(secure=True)
-
 
 def _clean_optional_text(value):
     if value is None:
@@ -35,9 +26,11 @@ def _clean_optional_text(value):
 
 
 def _get_current_workshop(db: Session, current_user: User) -> Workshop:
-    workshop = db.query(Workshop).filter(
-        Workshop.id == current_user.workshop_id
-    ).first()
+    workshop = (
+        db.query(Workshop)
+        .filter(Workshop.id == current_user.workshop_id)
+        .first()
+    )
     if not workshop:
         raise HTTPException(status_code=404, detail="Taller no encontrado")
     return workshop
@@ -52,10 +45,16 @@ def _missing_setup_fields(workshop: Workshop) -> list[str]:
         "logo_url": workshop.logo_url,
     }
     return [
-        name for name, value in required_fields.items()
+        field_name
+        for field_name, value in required_fields.items()
         if value is None or (isinstance(value, str) and not value.strip())
     ]
 
+
+# =========================================================
+# PERFIL DEL TALLER AUTENTICADO
+# Estas rutas deben permanecer antes de /{workshop_id}
+# =========================================================
 
 @router.get("/me", response_model=WorkshopResponse)
 def get_my_workshop(
@@ -76,10 +75,14 @@ def update_my_workshop(
 
     if "name" in update_data and update_data["name"]:
         normalized_name = update_data["name"].strip()
-        existing = db.query(Workshop).filter(
-            Workshop.name == normalized_name,
-            Workshop.id != workshop.id,
-        ).first()
+        existing = (
+            db.query(Workshop)
+            .filter(
+                Workshop.name == normalized_name,
+                Workshop.id != workshop.id,
+            )
+            .first()
+        )
         if existing:
             raise HTTPException(
                 status_code=400,
@@ -90,73 +93,9 @@ def update_my_workshop(
     for key, value in update_data.items():
         setattr(workshop, key, _clean_optional_text(value))
 
+    # Si se modifica el perfil, se vuelve a calcular su estado.
     workshop.setup_completed = len(_missing_setup_fields(workshop)) == 0
-    db.commit()
-    db.refresh(workshop)
-    return workshop
 
-
-@router.post("/me/logo", response_model=WorkshopResponse)
-async def upload_my_workshop_logo(
-    logo: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    workshop = _get_current_workshop(db, current_user)
-
-    if not os.getenv("CLOUDINARY_URL"):
-        raise HTTPException(
-            status_code=500,
-            detail="Cloudinary no está configurado en el servidor",
-        )
-
-    if logo.content_type not in ALLOWED_LOGO_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail="El logo debe ser una imagen JPG, PNG o WEBP",
-        )
-
-    content = await logo.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="El archivo está vacío")
-
-    if len(content) > MAX_LOGO_SIZE_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail="El logo no puede superar los 3 MB",
-        )
-
-    try:
-        result = cloudinary.uploader.upload(
-            content,
-            resource_type="image",
-            folder=f"siadauto/workshops/{workshop.id}",
-            public_id="logo",
-            overwrite=True,
-            invalidate=True,
-            transformation=[{
-                "width": 1000,
-                "height": 1000,
-                "crop": "limit",
-                "quality": "auto",
-                "fetch_format": "auto",
-            }],
-        )
-    except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="No se pudo cargar el logo. Intenta nuevamente",
-        ) from exc
-
-    secure_url = result.get("secure_url")
-    if not secure_url:
-        raise HTTPException(
-            status_code=502,
-            detail="Cloudinary no devolvió la dirección del logo",
-        )
-
-    workshop.logo_url = secure_url
-    workshop.setup_completed = len(_missing_setup_fields(workshop)) == 0
     db.commit()
     db.refresh(workshop)
     return workshop
@@ -169,6 +108,7 @@ def get_my_setup_status(
 ):
     workshop = _get_current_workshop(db, current_user)
     missing_fields = _missing_setup_fields(workshop)
+
     return {
         "setup_completed": len(missing_fields) == 0,
         "missing_fields": missing_fields,
@@ -182,6 +122,7 @@ def complete_my_setup(
 ):
     workshop = _get_current_workshop(db, current_user)
     missing_fields = _missing_setup_fields(workshop)
+
     if missing_fields:
         raise HTTPException(
             status_code=400,
@@ -190,22 +131,35 @@ def complete_my_setup(
                 "missing_fields": missing_fields,
             },
         )
+
     workshop.setup_completed = True
     db.commit()
     db.refresh(workshop)
     return workshop
 
 
+# =========================================================
+# CRUD EXISTENTE
+# Se conserva para no romper el flujo actual de administración.
+# Más adelante puede restringirse a un superadministrador.
+# =========================================================
+
 @router.post("/", response_model=WorkshopResponse)
-def create_workshop(workshop: WorkshopCreate, db: Session = Depends(get_db)):
+def create_workshop(
+    workshop: WorkshopCreate,
+    db: Session = Depends(get_db),
+):
     name = workshop.name.strip()
-    if db.query(Workshop).filter(Workshop.name == name).first():
+    existing = db.query(Workshop).filter(Workshop.name == name).first()
+    if existing:
         raise HTTPException(
             status_code=400,
             detail="Ya existe un taller con ese nombre",
         )
+
     data = workshop.model_dump()
     data["name"] = name
+
     db_workshop = Workshop(**data)
     db.add(db_workshop)
     db.commit()
@@ -237,12 +191,17 @@ def update_workshop(
         raise HTTPException(status_code=404, detail="Taller no encontrado")
 
     update_data = data.model_dump(exclude_unset=True)
+
     if "name" in update_data and update_data["name"]:
         normalized_name = update_data["name"].strip()
-        existing = db.query(Workshop).filter(
-            Workshop.name == normalized_name,
-            Workshop.id != workshop_id,
-        ).first()
+        existing = (
+            db.query(Workshop)
+            .filter(
+                Workshop.name == normalized_name,
+                Workshop.id != workshop_id,
+            )
+            .first()
+        )
         if existing:
             raise HTTPException(
                 status_code=400,
@@ -254,6 +213,7 @@ def update_workshop(
         setattr(workshop, key, _clean_optional_text(value))
 
     workshop.setup_completed = len(_missing_setup_fields(workshop)) == 0
+
     db.commit()
     db.refresh(workshop)
     return workshop
@@ -264,6 +224,7 @@ def delete_workshop(workshop_id: int, db: Session = Depends(get_db)):
     workshop = db.query(Workshop).filter(Workshop.id == workshop_id).first()
     if not workshop:
         raise HTTPException(status_code=404, detail="Taller no encontrado")
+
     db.delete(workshop)
     db.commit()
     return {"message": "Taller eliminado correctamente"}
