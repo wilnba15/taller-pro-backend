@@ -20,7 +20,6 @@ class AdminWorkshopCreate(BaseModel):
     admin_name: str = Field(min_length=2, max_length=150)
     admin_email: str = Field(min_length=5, max_length=150)
     admin_password: str = Field(min_length=6, max_length=72)
-    inventory_enabled: bool = False
 
 
 class AdminWorkshopUpdate(BaseModel):
@@ -32,7 +31,6 @@ class AdminWorkshopUpdate(BaseModel):
     admin_name: str | None = Field(default=None, max_length=150)
     admin_email: str | None = Field(default=None, max_length=150)
     admin_password: str | None = Field(default=None, max_length=72)
-    inventory_enabled: bool | None = None
 
 
 class AdminWorkshopStatusUpdate(BaseModel):
@@ -74,7 +72,6 @@ def list_admin_workshops(
                 "address": workshop.address,
                 "status": workshop.status,
                 "setup_completed": workshop.setup_completed,
-                "inventory_enabled": workshop.inventory_enabled,
                 "created_at": workshop.created_at,
                 "admin_name": admin_user.full_name if admin_user else None,
                 "admin_email": admin_user.email if admin_user else None,
@@ -107,7 +104,6 @@ def create_admin_workshop(
         address=data.address.strip() if data.address else None,
         status="activo",
         setup_completed=False,
-        inventory_enabled=data.inventory_enabled,
     )
 
     db.add(workshop)

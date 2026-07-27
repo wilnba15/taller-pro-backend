@@ -9,6 +9,7 @@ from app.models.vehicle import Vehicle  # noqa: F401
 from app.models.work_order import WorkOrder  # noqa: F401
 from app.models.work_order_photo import WorkOrderPhoto  # noqa: F401
 from app.models.work_order_item import WorkOrderItem  # noqa: F401
+from app.models.inventory_product import InventoryProduct  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.swm_user import SwmUser  # noqa: F401
 from app.models.swm import (
@@ -33,6 +34,7 @@ from app.routers.swm_auth import router as swm_auth_router
 from app.routers.vehicle_life_report import router as vehicle_life_router
 from app.routers.reminders import router as reminders_router
 from app.routers.admin import router as admin_router
+from app.routers.inventory import router as inventory_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -66,6 +68,7 @@ app.include_router(swm_router)
 app.include_router(vehicle_life_router)
 app.include_router(reminders_router)
 app.include_router(admin_router)
+app.include_router(inventory_router)
 
 
 @app.get("/")

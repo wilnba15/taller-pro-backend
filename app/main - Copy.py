@@ -11,7 +11,14 @@ from app.models.work_order_photo import WorkOrderPhoto  # noqa: F401
 from app.models.work_order_item import WorkOrderItem  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.swm_user import SwmUser  # noqa: F401
-from app.models.swm import SwmAiQuery, SwmMaintenanceSchedule, SwmServiceOrder, SwmServiceRecord, SwmVehicle  # noqa: F401
+from app.models.swm import (
+    SwmAiQuery,
+    SwmFuelRecord,
+    SwmMaintenanceSchedule,
+    SwmServiceOrder,
+    SwmServiceRecord,
+    SwmVehicle,
+)  # noqa: F401
 
 from app.routers.workshops import router as workshops_router
 from app.routers.clients import router as clients_router
@@ -25,15 +32,17 @@ from app.routers.swm import router as swm_router
 from app.routers.swm_auth import router as swm_auth_router
 from app.routers.vehicle_life_report import router as vehicle_life_router
 from app.routers.reminders import router as reminders_router
+from app.routers.admin import router as admin_router
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Taller PRO API + SWM Care", version="1.2.0")
+app = FastAPI(title="Taller PRO API + SWM Care", version="1.3.0")
 
 origins = [
     "http://localhost:3000",
     "https://taller-pro-frontend.vercel.app",
     "https://swm-care.vercel.app",
+    "https://swm-care-mobile.vercel.app",
 ]
 
 app.add_middleware(
@@ -56,6 +65,7 @@ app.include_router(swm_auth_router)
 app.include_router(swm_router)
 app.include_router(vehicle_life_router)
 app.include_router(reminders_router)
+app.include_router(admin_router)
 
 
 @app.get("/")
