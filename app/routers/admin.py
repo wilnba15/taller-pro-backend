@@ -39,6 +39,10 @@ class AdminWorkshopStatusUpdate(BaseModel):
     status: str
 
 
+class AdminWorkshopInventoryUpdate(BaseModel):
+    inventory_enabled: bool
+
+
 def require_superadmin(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role != "superadmin":
         raise HTTPException(
@@ -60,7 +64,7 @@ def list_admin_workshops(
     for workshop in workshops:
         admin_user = (
             db.query(User)
-            .filter(User.workshop_id == workshop.id, User.role.in_(["admin", "superadmin"]))
+            .filter(User.workshop_id == workshop.id, User.role == "admin")
             .order_by(User.id.asc())
             .first()
         )
@@ -145,7 +149,7 @@ def update_admin_workshop(
 
     admin_user = (
         db.query(User)
-        .filter(User.workshop_id == workshop_id, User.role.in_(["admin", "superadmin"]))
+        .filter(User.workshop_id == workshop_id, User.role == "admin")
         .order_by(User.id.asc())
         .first()
     )
@@ -239,6 +243,33 @@ def update_admin_workshop(
     return {
         "message": "Taller y usuario administrador actualizados correctamente",
         "workshop_id": workshop.id,
+    }
+
+
+@router.patch("/workshops/{workshop_id}/inventory")
+def change_admin_workshop_inventory(
+    workshop_id: int,
+    data: AdminWorkshopInventoryUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_superadmin),
+):
+    workshop = db.query(Workshop).filter(Workshop.id == workshop_id).first()
+
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Taller no encontrado")
+
+    workshop.inventory_enabled = data.inventory_enabled
+    db.commit()
+    db.refresh(workshop)
+
+    return {
+        "message": (
+            "Inventario activado correctamente"
+            if workshop.inventory_enabled
+            else "Inventario desactivado correctamente"
+        ),
+        "workshop_id": workshop.id,
+        "inventory_enabled": workshop.inventory_enabled,
     }
 
 
