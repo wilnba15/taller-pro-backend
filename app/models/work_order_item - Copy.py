@@ -7,12 +7,6 @@ class WorkOrderItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     work_order_id = Column(Integer, ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False)
-    inventory_product_id = Column(
-        Integer,
-        ForeignKey("inventory_products.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     item_type = Column(String(20), nullable=False)  # 'repuesto' o 'mano_obra'
     description = Column(Text, nullable=False)
     quantity = Column(Numeric(10, 2), nullable=False, default=1)
