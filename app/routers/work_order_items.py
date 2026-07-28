@@ -49,12 +49,6 @@ def create_item(
 
     work_order = get_owned_work_order(int(work_order_id), db, current_user)
 
-    if work_order.inventory_processed:
-        raise HTTPException(
-            status_code=400,
-            detail="La OT ya descontó inventario. No se pueden agregar nuevos ítems.",
-        )
-
     item_type = item.get("item_type")
     inventory_product_id = item.get("inventory_product_id")
 
@@ -215,6 +209,41 @@ def get_items(
     return [dict(row) for row in rows]
 
 
+@router.patch("/{item_id}/next-service")
+def update_item_next_service(
+    item_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    item = db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Ítem no encontrado")
+
+    get_owned_work_order(item.work_order_id, db, current_user)
+
+    next_service_km = data.get("next_service_km")
+    next_service_date = data.get("next_service_date")
+
+    item.next_service_km = (
+        int(next_service_km)
+        if next_service_km not in [None, ""]
+        else None
+    )
+    item.next_service_date = next_service_date or None
+
+    db.commit()
+    db.refresh(item)
+
+    return {
+        "message": "Próximo servicio actualizado correctamente",
+        "item_id": item.id,
+        "next_service_km": item.next_service_km,
+        "next_service_date": item.next_service_date,
+    }
+
+
 @router.delete("/{item_id}")
 def delete_item(
     item_id: int,
@@ -226,12 +255,6 @@ def delete_item(
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
 
     work_order = get_owned_work_order(item.work_order_id, db, current_user)
-
-    if work_order.inventory_processed:
-        raise HTTPException(
-            status_code=400,
-            detail="La OT ya descontó inventario. No se pueden eliminar sus ítems.",
-        )
 
     db.delete(item)
     db.flush()
