@@ -216,31 +216,60 @@ def update_item_next_service(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    item = db.query(WorkOrderItem).filter(WorkOrderItem.id == item_id).first()
+    owned_item = (
+        db.query(WorkOrderItem)
+        .join(WorkOrder, WorkOrder.id == WorkOrderItem.work_order_id)
+        .filter(
+            WorkOrderItem.id == item_id,
+            WorkOrder.workshop_id == current_user.workshop_id,
+        )
+        .first()
+    )
 
-    if not item:
+    if not owned_item:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
-
-    get_owned_work_order(item.work_order_id, db, current_user)
 
     next_service_km = data.get("next_service_km")
     next_service_date = data.get("next_service_date")
 
-    item.next_service_km = (
-        int(next_service_km)
-        if next_service_km not in [None, ""]
-        else None
-    )
-    item.next_service_date = next_service_date or None
+    updated = db.execute(
+        text("""
+            UPDATE work_order_items
+            SET
+                next_service_km = :next_service_km,
+                next_service_date = :next_service_date,
+                reminder_enabled = TRUE,
+                reminder_sent = FALSE
+            WHERE id = :item_id
+            RETURNING
+                id,
+                next_service_km,
+                next_service_date,
+                reminder_enabled,
+                reminder_sent
+        """),
+        {
+            "item_id": item_id,
+            "next_service_km": (
+                int(next_service_km)
+                if next_service_km not in [None, ""]
+                else None
+            ),
+            "next_service_date": next_service_date or None,
+        },
+    ).mappings().first()
 
     db.commit()
-    db.refresh(item)
+
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail="No se pudo actualizar el próximo servicio",
+        )
 
     return {
         "message": "Próximo servicio actualizado correctamente",
-        "item_id": item.id,
-        "next_service_km": item.next_service_km,
-        "next_service_date": item.next_service_date,
+        **dict(updated),
     }
 
 
