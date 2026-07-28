@@ -49,6 +49,12 @@ def create_item(
 
     work_order = get_owned_work_order(int(work_order_id), db, current_user)
 
+    if work_order.inventory_processed:
+        raise HTTPException(
+            status_code=400,
+            detail="La OT ya descontó inventario. No se pueden agregar nuevos ítems.",
+        )
+
     item_type = item.get("item_type")
     inventory_product_id = item.get("inventory_product_id")
 
@@ -220,6 +226,12 @@ def delete_item(
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
 
     work_order = get_owned_work_order(item.work_order_id, db, current_user)
+
+    if work_order.inventory_processed:
+        raise HTTPException(
+            status_code=400,
+            detail="La OT ya descontó inventario. No se pueden eliminar sus ítems.",
+        )
 
     db.delete(item)
     db.flush()

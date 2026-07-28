@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Date, Numeric, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, String, Text, Date, Numeric, DateTime, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -24,6 +24,9 @@ class WorkOrder(Base):
     labor_cost = Column(Numeric(10, 2), nullable=False, default=0)
     parts_cost = Column(Numeric(10, 2), nullable=False, default=0)
     total = Column(Numeric(10, 2), nullable=False, default=0)
+
+    inventory_processed = Column(Boolean, nullable=False, default=False, server_default="false")
+    inventory_processed_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

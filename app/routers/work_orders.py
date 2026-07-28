@@ -21,6 +21,7 @@ from app.models.client import Client
 from app.models.vehicle import Vehicle
 from app.models.workshop import Workshop
 from app.models.work_order_item import WorkOrderItem
+from app.models.inventory_product import InventoryProduct
 from app.models.user import User
 from app.core.security import get_current_user
 from app.schemas.work_order import WorkOrderCreate, WorkOrderUpdate, WorkOrderResponse
@@ -101,6 +102,76 @@ def validate_client_and_vehicle(client_id: int, vehicle_id: int, workshop_id: in
         raise HTTPException(status_code=400, detail="El vehículo no pertenece al cliente seleccionado")
 
     return client, vehicle
+
+
+def process_inventory_for_work_order(
+    work_order: WorkOrder,
+    db: Session,
+    workshop: Workshop,
+) -> None:
+    if work_order.inventory_processed:
+        return
+
+    if not workshop.inventory_enabled:
+        return
+
+    linked_items = (
+        db.query(WorkOrderItem)
+        .filter(
+            WorkOrderItem.work_order_id == work_order.id,
+            WorkOrderItem.inventory_product_id.isnot(None),
+            WorkOrderItem.item_type == "repuesto",
+        )
+        .all()
+    )
+
+    quantities_by_product: dict[int, Decimal] = {}
+    for item in linked_items:
+        product_id = int(item.inventory_product_id)
+        quantities_by_product[product_id] = (
+            quantities_by_product.get(product_id, Decimal("0"))
+            + Decimal(item.quantity or 0)
+        )
+
+    products: dict[int, InventoryProduct] = {}
+    for product_id, required_quantity in quantities_by_product.items():
+        product = (
+            db.query(InventoryProduct)
+            .filter(
+                InventoryProduct.id == product_id,
+                InventoryProduct.workshop_id == work_order.workshop_id,
+                InventoryProduct.is_active.is_(True),
+            )
+            .with_for_update()
+            .first()
+        )
+
+        if not product:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Producto de inventario {product_id} no encontrado",
+            )
+
+        available_stock = Decimal(product.stock or 0)
+        if required_quantity > available_stock:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Stock insuficiente para {product.name}. "
+                    f"Necesario: {required_quantity}. "
+                    f"Disponible: {available_stock}"
+                ),
+            )
+
+        products[product_id] = product
+
+    for product_id, required_quantity in quantities_by_product.items():
+        products[product_id].stock = (
+            Decimal(products[product_id].stock or 0) - required_quantity
+        )
+
+    work_order.inventory_processed = True
+    work_order.inventory_processed_at = datetime.now()
 
 
 @router.post("/", response_model=WorkOrderResponse)
@@ -401,7 +472,7 @@ def update_work_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    get_owned_work_order(work_order_id, db, current_user)
+    work_order = get_owned_work_order(work_order_id, db, current_user)
 
     client_id = data.get("client_id")
     vehicle_id = data.get("vehicle_id")
@@ -409,59 +480,73 @@ def update_work_order(
     if client_id is None or vehicle_id is None:
         raise HTTPException(status_code=400, detail="client_id y vehicle_id son obligatorios")
 
-    validate_client_and_vehicle(int(client_id), int(vehicle_id), current_user.workshop_id, db)
+    validate_client_and_vehicle(
+        int(client_id),
+        int(vehicle_id),
+        current_user.workshop_id,
+        db,
+    )
+
+    requested_status = data.get("status") or work_order.status
+    if requested_status not in {"pendiente", "en_proceso", "finalizado", "entregado"}:
+        raise HTTPException(status_code=400, detail="Estado de OT no válido")
 
     labor_cost = Decimal(str(data.get("labor_cost") or 0))
     parts_cost = Decimal(str(data.get("parts_cost") or 0))
 
-    query = text("""
-        UPDATE work_orders
-        SET
-            client_id = :client_id,
-            vehicle_id = :vehicle_id,
-            current_km = :current_km,
-            entry_date = :entry_date,
-            estimated_delivery_date = :estimated_delivery_date,
-            status = :status,
-            issue_description = :issue_description,
-            diagnosis = :diagnosis,
-            work_performed = :work_performed,
-            notes = :notes,
-            labor_cost = :labor_cost,
-            parts_cost = :parts_cost,
-            total = :total
-        WHERE id = :work_order_id
-          AND workshop_id = :workshop_id
-        RETURNING *
-    """)
+    work_order.client_id = int(client_id)
+    work_order.vehicle_id = int(vehicle_id)
+    work_order.current_km = data.get("current_km")
+    work_order.entry_date = data.get("entry_date")
+    work_order.estimated_delivery_date = data.get("estimated_delivery_date")
+    work_order.status = requested_status
+    work_order.issue_description = data.get("issue_description")
+    work_order.diagnosis = data.get("diagnosis")
+    work_order.work_performed = data.get("work_performed")
+    work_order.notes = data.get("notes")
+    work_order.labor_cost = labor_cost
+    work_order.parts_cost = parts_cost
+    work_order.total = labor_cost + parts_cost
 
-    row = db.execute(
-        query,
-        {
-            "work_order_id": work_order_id,
-            "workshop_id": current_user.workshop_id,
-            "client_id": client_id,
-            "vehicle_id": vehicle_id,
-            "current_km": data.get("current_km"),
-            "entry_date": data.get("entry_date"),
-            "estimated_delivery_date": data.get("estimated_delivery_date"),
-            "status": data.get("status"),
-            "issue_description": data.get("issue_description"),
-            "diagnosis": data.get("diagnosis"),
-            "work_performed": data.get("work_performed"),
-            "notes": data.get("notes"),
-            "labor_cost": labor_cost,
-            "parts_cost": parts_cost,
-            "total": labor_cost + parts_cost,
-        },
-    ).mappings().first()
+    workshop = (
+        db.query(Workshop)
+        .filter(Workshop.id == current_user.workshop_id)
+        .first()
+    )
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Taller no encontrado")
 
-    db.commit()
+    if requested_status in {"finalizado", "entregado"}:
+        process_inventory_for_work_order(work_order, db, workshop)
 
-    if not row:
-        raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada")
+    try:
+        db.commit()
+        db.refresh(work_order)
+    except Exception:
+        db.rollback()
+        raise
 
-    return dict(row)
+    return {
+        "id": work_order.id,
+        "workshop_id": work_order.workshop_id,
+        "client_id": work_order.client_id,
+        "vehicle_id": work_order.vehicle_id,
+        "current_km": work_order.current_km,
+        "entry_date": work_order.entry_date,
+        "estimated_delivery_date": work_order.estimated_delivery_date,
+        "status": work_order.status,
+        "issue_description": work_order.issue_description,
+        "diagnosis": work_order.diagnosis,
+        "work_performed": work_order.work_performed,
+        "notes": work_order.notes,
+        "labor_cost": work_order.labor_cost,
+        "parts_cost": work_order.parts_cost,
+        "total": work_order.total,
+        "inventory_processed": work_order.inventory_processed,
+        "inventory_processed_at": work_order.inventory_processed_at,
+        "created_at": work_order.created_at,
+        "updated_at": work_order.updated_at,
+    }
 
 
 @router.delete("/{work_order_id}")
