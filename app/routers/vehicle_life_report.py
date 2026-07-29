@@ -63,6 +63,39 @@ def paragraph_text(value, fallback="-") -> str:
     return escape(safe(value, fallback))
 
 
+MONTHS_ES = {
+    1: "enero",
+    2: "febrero",
+    3: "marzo",
+    4: "abril",
+    5: "mayo",
+    6: "junio",
+    7: "julio",
+    8: "agosto",
+    9: "septiembre",
+    10: "octubre",
+    11: "noviembre",
+    12: "diciembre",
+}
+
+
+def long_date_es(value) -> str:
+    if not value:
+        return "Sin fecha"
+
+    try:
+        if isinstance(value, datetime):
+            parsed = value.date()
+        elif isinstance(value, date):
+            parsed = value
+        else:
+            parsed = datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+
+        return f"{parsed.day} de {MONTHS_ES[parsed.month]} de {parsed.year}"
+    except Exception:
+        return safe(value, "Sin fecha")
+
+
 def load_remote_logo(logo_url: str | None):
     if not logo_url:
         return None
@@ -97,6 +130,7 @@ def get_vehicle_life_rows(vehicle_id: int, workshop_id: int, db: Session):
     query = text("""
         SELECT
             wo.id AS work_order_id,
+            COALESCE(wo.order_number, wo.id) AS order_number,
             COALESCE(wo.entry_date, CAST(wo.created_at AS DATE)) AS work_order_date,
             wo.current_km,
             wo.status,
@@ -189,6 +223,7 @@ def get_vehicle_life(
         if row.get("next_service_km") or row.get("next_service_date"):
             next_services.append({
                 "work_order_id": row.get("work_order_id"),
+                "order_number": row.get("order_number"),
                 "item_id": row.get("item_id"),
                 "description": row.get("description"),
                 "item_type": row.get("item_type"),
@@ -220,11 +255,6 @@ def generate_vehicle_life_pdf(
 
     total_invested = sum(Decimal(str(row.get("subtotal") or 0)) for row in rows)
     last_km = rows[0].get("current_km") if rows else None
-
-    next_services = [
-        row for row in rows
-        if row.get("next_service_km") or row.get("next_service_date")
-    ]
 
     groups = {}
     order_sequence = []
@@ -479,64 +509,7 @@ def generate_vehicle_life_pdf(
     story.append(card_table)
     story.append(Spacer(1, 0.5 * cm))
 
-    story.append(Paragraph("Próximos cuidados", styles["SectionTitle"]))
-
-    if next_services:
-        next_rows = [["Servicio", "Realizado en", "Próximo kilometraje", "Próxima fecha"]]
-        for item in next_services:
-            next_rows.append(
-                [
-                    Paragraph(safe(item.get("description")), styles["Small"]),
-                    km_text(item.get("current_km")),
-                    km_text(item.get("next_service_km")),
-                    safe(item.get("next_service_date")),
-                ]
-            )
-
-        next_table = Table(
-            next_rows,
-            colWidths=[7.2 * cm, 3.4 * cm, 3.7 * cm, 3.2 * cm],
-            repeatRows=1,
-        )
-        next_table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), blue),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, 0), 8.5),
-                    ("BACKGROUND", (0, 1), (-1, -1), light_blue),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#BFDBFE")),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 7),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-                    ("TOPPADDING", (0, 0), (-1, -1), 7),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
-                ]
-            )
-        )
-        story.append(next_table)
-    else:
-        empty_box = Table(
-            [[Paragraph("Todavía no hay próximos servicios programados.", styles["Small"])]],
-            colWidths=[17.5 * cm],
-        )
-        empty_box.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, -1), light_blue),
-                    ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#BFDBFE")),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                    ("TOPPADDING", (0, 0), (-1, -1), 10),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-                ]
-            )
-        )
-        story.append(empty_box)
-
-    story.append(Spacer(1, 0.55 * cm))
-    story.append(Paragraph("Historial tipo concesionario", styles["SectionTitle"]))
+    story.append(Paragraph("Historial del vehículo", styles["SectionTitle"]))
 
     if not rows:
         story.append(
@@ -555,8 +528,9 @@ def generate_vehicle_life_pdf(
                 [
                     [
                         Paragraph(
-                            f"<b>Orden #{order_id}</b><br/>"
-                            f"<font size='9'>{safe(first.get('work_order_date'), 'Sin fecha')}</font>",
+                            "<b>Mantenimiento realizado</b><br/>"
+                            f"<font size='11'><b>{long_date_es(first.get('work_order_date'))}</b></font><br/>"
+                            f"<font size='8'>OT #{safe(first.get('order_number'), order_id)}</font>",
                             styles["CardValue"],
                         ),
                         Paragraph(
