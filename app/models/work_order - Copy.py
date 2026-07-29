@@ -9,7 +9,6 @@ class WorkOrder(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     workshop_id = Column(Integer, ForeignKey("workshops.id"), nullable=False, index=True)
-    order_number = Column(Integer, nullable=False, index=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=False)
 

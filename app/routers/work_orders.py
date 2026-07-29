@@ -189,9 +189,25 @@ def create_work_order(
     labor_cost = Decimal(work_order.labor_cost or 0)
     parts_cost = Decimal(work_order.parts_cost or 0)
 
+    # Evita que dos órdenes simultáneas reciban el mismo número en el taller.
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(:workshop_id)"),
+        {"workshop_id": workshop_id},
+    )
+
+    next_order_number = db.execute(
+        text("""
+            SELECT COALESCE(MAX(order_number), 0) + 1
+            FROM work_orders
+            WHERE workshop_id = :workshop_id
+        """),
+        {"workshop_id": workshop_id},
+    ).scalar_one()
+
     db_work_order = WorkOrder(
         **work_order.model_dump(),
         workshop_id=workshop_id,
+        order_number=int(next_order_number),
         total=labor_cost + parts_cost,
     )
     db.add(db_work_order)
@@ -208,7 +224,7 @@ def list_work_orders(
     return (
         db.query(WorkOrder)
         .filter(WorkOrder.workshop_id == current_user.workshop_id)
-        .order_by(WorkOrder.id.desc())
+        .order_by(WorkOrder.order_number.desc())
         .all()
     )
 
@@ -317,7 +333,7 @@ def generate_invoice_pdf(
     story.append(Spacer(1, 0.25 * cm))
 
     header_data = [
-        ["Factura / OT No.", f"#{work_order.id}", "Fecha emisión", datetime.now().strftime("%Y-%m-%d %H:%M")],
+        ["Factura / OT No.", f"#{work_order.order_number}", "Fecha emisión", datetime.now().strftime("%Y-%m-%d %H:%M")],
         ["Fecha ingreso", safe(work_order.entry_date), "Estado", safe(work_order.status).replace("_", " ").title()],
     ]
     header_table = Table(header_data, colWidths=[3.2 * cm, 5 * cm, 3.2 * cm, 5 * cm])
@@ -428,7 +444,7 @@ def generate_invoice_pdf(
     doc.build(story)
     buffer.seek(0)
 
-    filename = f"factura_orden_{work_order.id}.pdf"
+    filename = f"factura_orden_{work_order.order_number}.pdf"
     return StreamingResponse(
         buffer,
         media_type="application/pdf",
@@ -528,6 +544,7 @@ def update_work_order(
 
     return {
         "id": work_order.id,
+        "order_number": work_order.order_number,
         "workshop_id": work_order.workshop_id,
         "client_id": work_order.client_id,
         "vehicle_id": work_order.vehicle_id,

@@ -29,6 +29,7 @@ class WorkOrderUpdate(WorkOrderBase):
 class WorkOrderResponse(WorkOrderBase):
     id: int
     workshop_id: int
+    order_number: int
     total: Decimal
     created_at: datetime
     updated_at: datetime
