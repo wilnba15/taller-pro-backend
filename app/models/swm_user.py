@@ -15,6 +15,8 @@ class SwmUser(Base):
     city = Column(String(80), nullable=True)
     country = Column(String(80), nullable=True, default="Ecuador")
     status = Column(String(30), nullable=False, default="active")
+    reset_token_hash = Column(String(64), nullable=True, index=True)
+    reset_token_expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     vehicles = relationship(

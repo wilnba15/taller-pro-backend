@@ -18,6 +18,19 @@ class SwmUserLogin(BaseModel):
     password: str
 
 
+class SwmForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class SwmResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=500)
+    new_password: str = Field(..., min_length=6, max_length=128)
+
+
+class SwmMessageResponse(BaseModel):
+    message: str
+
+
 class SwmUserResponse(BaseModel):
     id: int
     full_name: str
