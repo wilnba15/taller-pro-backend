@@ -171,20 +171,20 @@ def forgot_password(payload: SwmForgotPasswordRequest, db: Session = Depends(get
 
     try:
         send_password_reset_email(user.email, reset_url)
-except Exception as exc:
-    print("===================================")
-    print("SMTP ERROR:")
-    print(exc)
-    print("===================================")
+    except Exception as exc:
+        print("===================================")
+        print("SMTP ERROR:")
+        print(exc)
+        print("===================================")
 
-    user.reset_token_hash = None
-    user.reset_token_expires_at = None
-    db.commit()
+        user.reset_token_hash = None
+        user.reset_token_expires_at = None
+        db.commit()
 
-    raise HTTPException(
-        status_code=503,
-        detail=f"SMTP ERROR: {str(exc)}"
-    ) from exc
+        raise HTTPException(
+            status_code=503,
+            detail=f"SMTP ERROR: {str(exc)}"
+        ) from exc
 
     return {"message": generic_message}
 
