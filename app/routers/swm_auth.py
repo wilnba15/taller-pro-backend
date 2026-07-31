@@ -1,5 +1,5 @@
-import hmac
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -49,6 +49,7 @@ def get_current_swm_user(
     db: Session = Depends(get_db),
 ) -> SwmUser:
     token = credentials.credentials
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         scope = payload.get("scope")
@@ -86,7 +87,9 @@ def register_swm_user(payload: SwmUserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    access_token = create_swm_access_token({"sub": str(user.id), "email": user.email, "full_name": user.full_name})
+    access_token = create_swm_access_token(
+        {"sub": str(user.id), "email": user.email, "full_name": user.full_name}
+    )
     return {"access_token": access_token, "token_type": "bearer", "user": user}
 
 
@@ -98,25 +101,44 @@ def login_swm_user(payload: SwmUserLogin, db: Session = Depends(get_db)):
     if user.status != "active":
         raise HTTPException(status_code=403, detail="Usuario SWM inactivo")
 
-    access_token = create_swm_access_token({"sub": str(user.id), "email": user.email, "full_name": user.full_name})
+    access_token = create_swm_access_token(
+        {"sub": str(user.id), "email": user.email, "full_name": user.full_name}
+    )
     return {"access_token": access_token, "token_type": "bearer", "user": user}
 
 
 @router.post("/direct-reset-password", response_model=SwmMessageResponse)
-def direct_reset_password(payload: SwmDirectResetPasswordRequest, db: Session = Depends(get_db)):
+def direct_reset_password(
+    payload: SwmDirectResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
     configured_code = os.getenv("SWM_PASSWORD_RESET_CODE", "").strip()
-    if not configured_code:
-        raise HTTPException(status_code=503, detail="El reseteo de contraseña no está configurado.")
 
-    if not hmac.compare_digest(payload.reset_code.strip(), configured_code):
+    if not configured_code:
+        raise HTTPException(
+            status_code=503,
+            detail="El reseteo de contraseña no está configurado.",
+        )
+
+    if not secrets.compare_digest(payload.authorization_code.strip(), configured_code):
         raise HTTPException(status_code=403, detail="Código de autorización incorrecto.")
 
     user = db.query(SwmUser).filter(SwmUser.email == payload.email.lower()).first()
-    if not user or user.status != "active":
-        raise HTTPException(status_code=404, detail="Usuario activo no encontrado.")
+    if not user:
+        raise HTTPException(status_code=404, detail="No existe una cuenta con ese correo.")
+    if user.status != "active":
+        raise HTTPException(status_code=403, detail="El usuario está inactivo.")
 
     user.password_hash = hash_password(payload.new_password)
+
+    # Limpia campos antiguos de recuperación si todavía existen en el modelo/BD.
+    if hasattr(user, "reset_token_hash"):
+        user.reset_token_hash = None
+    if hasattr(user, "reset_token_expires_at"):
+        user.reset_token_expires_at = None
+
     db.commit()
+
     return {"message": "Tu contraseña fue actualizada correctamente."}
 
 

@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr, Field
 class SwmUserCreate(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=150)
     email: EmailStr
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=6, max_length=128)
     phone: Optional[str] = Field(default=None, max_length=30)
     city: Optional[str] = Field(default=None, max_length=80)
     country: Optional[str] = Field(default="Ecuador", max_length=80)
@@ -20,7 +20,7 @@ class SwmUserLogin(BaseModel):
 
 class SwmDirectResetPasswordRequest(BaseModel):
     email: EmailStr
-    reset_code: str = Field(..., min_length=8, max_length=200)
+    authorization_code: str = Field(..., min_length=6, max_length=200)
     new_password: str = Field(..., min_length=6, max_length=128)
 
 
