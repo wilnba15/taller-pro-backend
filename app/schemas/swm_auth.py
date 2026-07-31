@@ -18,12 +18,9 @@ class SwmUserLogin(BaseModel):
     password: str
 
 
-class SwmForgotPasswordRequest(BaseModel):
+class SwmDirectResetPasswordRequest(BaseModel):
     email: EmailStr
-
-
-class SwmResetPasswordRequest(BaseModel):
-    token: str = Field(..., min_length=20, max_length=500)
+    reset_code: str = Field(..., min_length=8, max_length=200)
     new_password: str = Field(..., min_length=6, max_length=128)
 
 
