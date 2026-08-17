@@ -1,7 +1,4 @@
 from fastapi import APIRouter, Depends, HTTPException
-import base64
-import hashlib
-import os
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -10,30 +7,111 @@ from app.database import get_db
 from app.models.electronic_document import ElectronicDocument
 from app.models.electronic_signature import ElectronicSignature
 from app.models.invoice import Invoice
+from app.models.sri_certificate import SriCertificate
 from app.models.user import User
-from app.services.sri.signer import certificate_metadata, load_pkcs12_certificate, sign_xml_xades_bes
+from app.services.sri.certificate_vault import decrypt_bytes, decrypt_text
+from app.services.sri.signer import (
+    certificate_metadata,
+    load_pkcs12_certificate,
+    load_pkcs12_certificate_from_bytes,
+    sign_xml_xades_bes,
+)
 
-router = APIRouter(prefix="/sri-signatures", tags=["SRI Signatures"])
 
-def get_owned_invoice(invoice_id: int, db: Session, current_user: User) -> Invoice:
-    invoice = db.query(Invoice).filter(
-        Invoice.id == invoice_id,
-        Invoice.workshop_id == current_user.workshop_id,
-    ).first()
+router = APIRouter(
+    prefix="/sri-signatures",
+    tags=["SRI Signatures"],
+)
+
+
+def get_owned_invoice(
+    invoice_id: int,
+    db: Session,
+    current_user: User,
+) -> Invoice:
+    invoice = (
+        db.query(Invoice)
+        .filter(
+            Invoice.id == invoice_id,
+            Invoice.workshop_id == current_user.workshop_id,
+        )
+        .first()
+    )
+
     if not invoice:
-        raise HTTPException(status_code=404, detail="Factura no encontrada")
+        raise HTTPException(
+            status_code=404,
+            detail="Factura no encontrada",
+        )
+
     return invoice
 
-def get_electronic_document(invoice_id: int, db: Session, current_user: User) -> ElectronicDocument:
-    document = db.query(ElectronicDocument).filter(
-        ElectronicDocument.invoice_id == invoice_id,
-        ElectronicDocument.workshop_id == current_user.workshop_id,
-    ).first()
+
+def get_electronic_document(
+    invoice_id: int,
+    db: Session,
+    current_user: User,
+) -> ElectronicDocument:
+    document = (
+        db.query(ElectronicDocument)
+        .filter(
+            ElectronicDocument.invoice_id == invoice_id,
+            ElectronicDocument.workshop_id == current_user.workshop_id,
+        )
+        .first()
+    )
+
     if not document:
-        raise HTTPException(status_code=404, detail="Primero debe generar el XML SRI de la factura")
+        raise HTTPException(
+            status_code=404,
+            detail="Primero debe generar el XML SRI de la factura",
+        )
+
     return document
 
-def serialize_signature(signature: ElectronicSignature) -> dict:
+
+def get_workshop_certificate(
+    db: Session,
+    current_user: User,
+):
+    stored = (
+        db.query(SriCertificate)
+        .filter(
+            SriCertificate.workshop_id == current_user.workshop_id,
+        )
+        .first()
+    )
+
+    if stored:
+        try:
+            p12_bytes = decrypt_bytes(stored.encrypted_p12)
+            password = decrypt_text(stored.encrypted_password)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=str(exc),
+            ) from exc
+
+        return {
+            "source": "workshop",
+            "stored": stored,
+            "p12_bytes": p12_bytes,
+            "password": password,
+        }
+
+    # Compatibilidad temporal con Sprint 2B:
+    # mientras el taller todavía no haya cargado su propio certificado.
+    return {
+        "source": "legacy",
+        "stored": None,
+        "p12_bytes": None,
+        "password": None,
+    }
+
+
+def serialize_signature(
+    signature: ElectronicSignature,
+) -> dict:
     return {
         "id": signature.id,
         "workshop_id": signature.workshop_id,
@@ -50,47 +128,43 @@ def serialize_signature(signature: ElectronicSignature) -> dict:
         "updated_at": signature.updated_at,
     }
 
-@router.get("/debug-certificate")
-def debug_certificate(current_user: User = Depends(get_current_user)):
-    """Diagnóstico temporal seguro del Secret File."""
-    path = (
-        os.getenv("SRI_P12_BASE64_PATH")
-        or os.getenv("SRI_P12_PATH")
-        or "/etc/secrets/siadauto_firma.p12.base64"
-    )
-    result = {
-        "workshop_id": current_user.workshop_id,
-        "configured_path": path,
-        "secret_file_exists": os.path.exists(path),
-        "base64_valid": False,
-        "decoded_size": None,
-        "sha256": None,
-    }
-    if not result["secret_file_exists"]:
-        return result
-
-    try:
-        with open(path, "rb") as secret_file:
-            raw_content = secret_file.read()
-        compact_base64 = b"".join(raw_content.split())
-        decoded = base64.b64decode(compact_base64, validate=True)
-        result["base64_valid"] = True
-        result["decoded_size"] = len(decoded)
-        result["sha256"] = hashlib.sha256(decoded).hexdigest().upper()
-    except Exception:
-        pass
-
-    return result
-
 
 @router.get("/certificate")
-def get_certificate_info(current_user: User = Depends(get_current_user)):
+def get_certificate_info(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    certificate_source = get_workshop_certificate(
+        db,
+        current_user,
+    )
+
     try:
-        _, certificate, _ = load_pkcs12_certificate()
-        metadata = certificate_metadata(certificate)
+        if certificate_source["source"] == "workshop":
+            _, certificate, _ = load_pkcs12_certificate_from_bytes(
+                certificate_source["p12_bytes"],
+                certificate_source["password"],
+            )
+        else:
+            _, certificate, _ = load_pkcs12_certificate()
+
+        metadata = certificate_metadata(
+            certificate
+        )
+
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"workshop_id": current_user.workshop_id, "configured": True, **metadata}
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "workshop_id": current_user.workshop_id,
+        "configured": True,
+        "source": certificate_source["source"],
+        **metadata,
+    }
+
 
 @router.post("/invoice/{invoice_id}/sign")
 def sign_invoice_xml(
@@ -98,20 +172,54 @@ def sign_invoice_xml(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    invoice = get_owned_invoice(invoice_id, db, current_user)
-    document = get_electronic_document(invoice_id, db, current_user)
+    invoice = get_owned_invoice(
+        invoice_id,
+        db,
+        current_user,
+    )
 
-    existing = db.query(ElectronicSignature).filter(
-        ElectronicSignature.invoice_id == invoice.id,
-        ElectronicSignature.workshop_id == current_user.workshop_id,
-    ).first()
+    document = get_electronic_document(
+        invoice_id,
+        db,
+        current_user,
+    )
+
+    existing = (
+        db.query(ElectronicSignature)
+        .filter(
+            ElectronicSignature.invoice_id == invoice.id,
+            ElectronicSignature.workshop_id == current_user.workshop_id,
+        )
+        .first()
+    )
+
     if existing:
-        return serialize_signature(existing)
+        return serialize_signature(
+            existing
+        )
+
+    certificate_source = get_workshop_certificate(
+        db,
+        current_user,
+    )
 
     try:
-        signed_xml, metadata = sign_xml_xades_bes(document.xml_content)
+        if certificate_source["source"] == "workshop":
+            signed_xml, metadata = sign_xml_xades_bes(
+                document.xml_content,
+                p12_bytes=certificate_source["p12_bytes"],
+                p12_password=certificate_source["password"],
+            )
+        else:
+            signed_xml, metadata = sign_xml_xades_bes(
+                document.xml_content
+            )
+
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
     signature = ElectronicSignature(
         workshop_id=current_user.workshop_id,
@@ -126,6 +234,7 @@ def sign_invoice_xml(
         signed_xml=signed_xml,
         status="firmado",
     )
+
     db.add(signature)
     document.status = "firmado"
 
@@ -136,7 +245,10 @@ def sign_invoice_xml(
         db.rollback()
         raise
 
-    return serialize_signature(signature)
+    return serialize_signature(
+        signature
+    )
+
 
 @router.get("/invoice/{invoice_id}")
 def get_invoice_signature(
@@ -144,14 +256,31 @@ def get_invoice_signature(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    get_owned_invoice(invoice_id, db, current_user)
-    signature = db.query(ElectronicSignature).filter(
-        ElectronicSignature.invoice_id == invoice_id,
-        ElectronicSignature.workshop_id == current_user.workshop_id,
-    ).first()
+    get_owned_invoice(
+        invoice_id,
+        db,
+        current_user,
+    )
+
+    signature = (
+        db.query(ElectronicSignature)
+        .filter(
+            ElectronicSignature.invoice_id == invoice_id,
+            ElectronicSignature.workshop_id == current_user.workshop_id,
+        )
+        .first()
+    )
+
     if not signature:
-        raise HTTPException(status_code=404, detail="El XML todavía no ha sido firmado")
-    return serialize_signature(signature)
+        raise HTTPException(
+            status_code=404,
+            detail="El XML todavía no ha sido firmado",
+        )
+
+    return serialize_signature(
+        signature
+    )
+
 
 @router.get("/invoice/{invoice_id}/xml")
 def get_signed_invoice_xml(
@@ -159,16 +288,34 @@ def get_signed_invoice_xml(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    invoice = get_owned_invoice(invoice_id, db, current_user)
-    signature = db.query(ElectronicSignature).filter(
-        ElectronicSignature.invoice_id == invoice.id,
-        ElectronicSignature.workshop_id == current_user.workshop_id,
-    ).first()
+    invoice = get_owned_invoice(
+        invoice_id,
+        db,
+        current_user,
+    )
+
+    signature = (
+        db.query(ElectronicSignature)
+        .filter(
+            ElectronicSignature.invoice_id == invoice.id,
+            ElectronicSignature.workshop_id == current_user.workshop_id,
+        )
+        .first()
+    )
+
     if not signature:
-        raise HTTPException(status_code=404, detail="El XML todavía no ha sido firmado")
+        raise HTTPException(
+            status_code=404,
+            detail="El XML todavía no ha sido firmado",
+        )
 
     return Response(
         content=signature.signed_xml,
         media_type="application/xml",
-        headers={"Content-Disposition": f'inline; filename="factura_firmada_{invoice.invoice_number}.xml"'},
+        headers={
+            "Content-Disposition": (
+                f'inline; filename="factura_firmada_'
+                f'{invoice.invoice_number}.xml"'
+            )
+        },
     )

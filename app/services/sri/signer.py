@@ -35,6 +35,64 @@ def _int_b64(value: int) -> str:
 def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
+def load_pkcs12_certificate_from_bytes(
+    p12_bytes: bytes,
+    p12_password: str,
+):
+    if not p12_bytes:
+        raise ValueError("El certificado .p12 está vacío")
+
+    if p12_password is None:
+        raise ValueError("Falta la contraseña del certificado .p12")
+
+    try:
+        private_key, certificate, chain = pkcs12.load_key_and_certificates(
+            p12_bytes,
+            p12_password.encode("utf-8"),
+        )
+    except Exception as exc:
+        raise ValueError(
+            "No se pudo abrir el certificado .p12. "
+            "Verifique el archivo y la contraseña."
+        ) from exc
+
+    if private_key is None or certificate is None:
+        raise ValueError(
+            "El .p12 no contiene llave privada y certificado válidos"
+        )
+
+    if not isinstance(private_key, rsa.RSAPrivateKey):
+        raise ValueError(
+            "El certificado debe utilizar una llave privada RSA"
+        )
+
+    if private_key.key_size < 2048:
+        raise ValueError(
+            "La llave RSA debe tener al menos 2048 bits"
+        )
+
+    now = datetime.now(timezone.utc)
+
+    not_before = getattr(
+        certificate,
+        "not_valid_before_utc",
+        certificate.not_valid_before.replace(tzinfo=timezone.utc),
+    )
+    not_after = getattr(
+        certificate,
+        "not_valid_after_utc",
+        certificate.not_valid_after.replace(tzinfo=timezone.utc),
+    )
+
+    if now < _aware(not_before):
+        raise ValueError("El certificado todavía no es válido")
+
+    if now > _aware(not_after):
+        raise ValueError("El certificado de firma electrónica está vencido")
+
+    return private_key, certificate, chain or []
+
+
 def load_pkcs12_certificate(p12_path: str | None = None, p12_password: str | None = None):
     path = (
         p12_path
@@ -66,33 +124,10 @@ def load_pkcs12_certificate(p12_path: str | None = None, p12_password: str | Non
     else:
         p12_bytes = raw_content
 
-    try:
-        private_key, certificate, chain = pkcs12.load_key_and_certificates(
-            p12_bytes,
-            password.encode("utf-8"),
-        )
-    except Exception as exc:
-        raise ValueError(
-            "No se pudo abrir el certificado .p12. Verifique el archivo y la contraseña."
-        ) from exc
-
-    if private_key is None or certificate is None:
-        raise ValueError("El .p12 no contiene llave privada y certificado válidos")
-    if not isinstance(private_key, rsa.RSAPrivateKey):
-        raise ValueError("El certificado debe utilizar una llave privada RSA")
-    if private_key.key_size < 2048:
-        raise ValueError("La llave RSA debe tener al menos 2048 bits")
-
-    now = datetime.now(timezone.utc)
-    not_before = getattr(certificate, "not_valid_before_utc", certificate.not_valid_before.replace(tzinfo=timezone.utc))
-    not_after = getattr(certificate, "not_valid_after_utc", certificate.not_valid_after.replace(tzinfo=timezone.utc))
-
-    if now < _aware(not_before):
-        raise ValueError("El certificado todavía no es válido")
-    if now > _aware(not_after):
-        raise ValueError("El certificado de firma electrónica está vencido")
-
-    return private_key, certificate, chain or []
+    return load_pkcs12_certificate_from_bytes(
+        p12_bytes,
+        password,
+    )
 
 def certificate_metadata(certificate: x509.Certificate) -> dict:
     not_before = getattr(certificate, "not_valid_before_utc", certificate.not_valid_before.replace(tzinfo=timezone.utc))
@@ -105,8 +140,25 @@ def certificate_metadata(certificate: x509.Certificate) -> dict:
         "valid_to": _aware(not_after),
     }
 
-def sign_xml_xades_bes(xml_content: str, *, p12_path: str | None = None, p12_password: str | None = None):
-    private_key, certificate, _ = load_pkcs12_certificate(p12_path, p12_password)
+def sign_xml_xades_bes(
+    xml_content: str,
+    *,
+    p12_path: str | None = None,
+    p12_password: str | None = None,
+    p12_bytes: bytes | None = None,
+):
+    if p12_bytes is not None:
+        if p12_password is None:
+            raise ValueError("Falta la contraseña del certificado .p12")
+        private_key, certificate, _ = load_pkcs12_certificate_from_bytes(
+            p12_bytes,
+            p12_password,
+        )
+    else:
+        private_key, certificate, _ = load_pkcs12_certificate(
+            p12_path,
+            p12_password,
+        )
 
     parser = etree.XMLParser(remove_blank_text=True, resolve_entities=False, no_network=True)
     try:
