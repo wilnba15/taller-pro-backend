@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
 
+
 # =========================
 # MODELOS
 # =========================
@@ -61,6 +62,7 @@ from app.routers.invoices import router as invoices_router
 from app.routers.sri_documents import router as sri_documents_router
 from app.routers.sri_signatures import router as sri_signatures_router
 from app.routers.sri_submissions import router as sri_submissions_router
+from app.routers.sri_settings import router as sri_settings_router
 
 
 # =========================
@@ -125,6 +127,7 @@ app.include_router(invoices_router)
 app.include_router(sri_documents_router)
 app.include_router(sri_signatures_router)
 app.include_router(sri_submissions_router)
+app.include_router(sri_settings_router)
 
 
 @app.get("/")
