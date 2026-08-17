@@ -16,6 +16,7 @@ from app.models.sri_setting import SriSetting  # noqa: F401
 from app.models.invoice import Invoice  # noqa: F401
 from app.models.invoice_item import InvoiceItem  # noqa: F401
 from app.models.electronic_document import ElectronicDocument  # noqa: F401
+from app.models.electronic_signature import ElectronicSignature  # noqa: F401
 
 from app.models.swm_user import SwmUser  # noqa: F401
 from app.models.swm import (
@@ -44,10 +45,11 @@ from app.routers.admin import router as admin_router
 from app.routers.inventory import router as inventory_router
 from app.routers.invoices import router as invoices_router
 from app.routers.sri_documents import router as sri_documents_router
+from app.routers.sri_signatures import router as sri_signatures_router
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Taller PRO API + SWM Care", version="1.5.0")
+app = FastAPI(title="Taller PRO API + SWM Care", version="1.6.0")
 
 origins = [
     "http://localhost:3000",
@@ -81,11 +83,8 @@ app.include_router(admin_router)
 app.include_router(inventory_router)
 app.include_router(invoices_router)
 app.include_router(sri_documents_router)
-
+app.include_router(sri_signatures_router)
 
 @app.get("/")
 def root():
-    return {
-        "message": "Taller PRO API y SWM Care funcionando",
-        "docs": "/docs",
-    }
+    return {"message": "Taller PRO API y SWM Care funcionando", "docs": "/docs"}
