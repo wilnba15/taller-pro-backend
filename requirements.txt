@@ -16,3 +16,4 @@ reportlab
 cloudinary
 cryptography
 lxml
+httpx
