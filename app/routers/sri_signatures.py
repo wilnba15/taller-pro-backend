@@ -1,4 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
+import base64
+import hashlib
+import os
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -46,6 +49,39 @@ def serialize_signature(signature: ElectronicSignature) -> dict:
         "created_at": signature.created_at,
         "updated_at": signature.updated_at,
     }
+
+@router.get("/debug-certificate")
+def debug_certificate(current_user: User = Depends(get_current_user)):
+    """Diagnóstico temporal seguro del Secret File."""
+    path = (
+        os.getenv("SRI_P12_BASE64_PATH")
+        or os.getenv("SRI_P12_PATH")
+        or "/etc/secrets/siadauto_firma.p12.base64"
+    )
+    result = {
+        "workshop_id": current_user.workshop_id,
+        "configured_path": path,
+        "secret_file_exists": os.path.exists(path),
+        "base64_valid": False,
+        "decoded_size": None,
+        "sha256": None,
+    }
+    if not result["secret_file_exists"]:
+        return result
+
+    try:
+        with open(path, "rb") as secret_file:
+            raw_content = secret_file.read()
+        compact_base64 = b"".join(raw_content.split())
+        decoded = base64.b64decode(compact_base64, validate=True)
+        result["base64_valid"] = True
+        result["decoded_size"] = len(decoded)
+        result["sha256"] = hashlib.sha256(decoded).hexdigest().upper()
+    except Exception:
+        pass
+
+    return result
+
 
 @router.get("/certificate")
 def get_certificate_info(current_user: User = Depends(get_current_user)):

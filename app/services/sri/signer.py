@@ -36,23 +36,45 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 def load_pkcs12_certificate(p12_path: str | None = None, p12_password: str | None = None):
-    path = p12_path or os.getenv("SRI_P12_PATH")
+    path = (
+        p12_path
+        or os.getenv("SRI_P12_BASE64_PATH")
+        or os.getenv("SRI_P12_PATH")
+        or "/etc/secrets/siadauto_firma.p12.base64"
+    )
     password = p12_password or os.getenv("SRI_P12_PASSWORD")
 
-    if not path:
-        raise ValueError("Falta SRI_P12_PATH en las variables de entorno")
     if password is None:
         raise ValueError("Falta SRI_P12_PASSWORD en las variables de entorno")
     if not os.path.exists(path):
-        raise ValueError(f"No existe el certificado PKCS12 en la ruta configurada: {path}")
+        raise ValueError(f"No existe el archivo de firma en la ruta configurada: {path}")
+
+    with open(path, "rb") as certificate_file:
+        raw_content = certificate_file.read()
+
+    if not raw_content:
+        raise ValueError("El archivo de firma está vacío")
+
+    if path.lower().endswith((".base64", ".b64", ".txt")):
+        try:
+            compact_base64 = b"".join(raw_content.split())
+            p12_bytes = base64.b64decode(compact_base64, validate=True)
+        except Exception as exc:
+            raise ValueError(
+                "El Secret File de la firma no contiene un Base64 válido"
+            ) from exc
+    else:
+        p12_bytes = raw_content
 
     try:
         private_key, certificate, chain = pkcs12.load_key_and_certificates(
-            open(path, "rb").read(),
+            p12_bytes,
             password.encode("utf-8"),
         )
     except Exception as exc:
-        raise ValueError("No se pudo abrir el certificado .p12. Verifique archivo y contraseña.") from exc
+        raise ValueError(
+            "No se pudo abrir el certificado .p12. Verifique el archivo y la contraseña."
+        ) from exc
 
     if private_key is None or certificate is None:
         raise ValueError("El .p12 no contiene llave privada y certificado válidos")
