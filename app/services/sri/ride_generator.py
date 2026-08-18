@@ -1,5 +1,6 @@
 from io import BytesIO
 from decimal import Decimal
+from datetime import datetime
 from xml.sax.saxutils import escape
 
 from reportlab.graphics.barcode.code128 import Code128
