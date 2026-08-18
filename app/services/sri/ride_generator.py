@@ -39,6 +39,33 @@ def _p(value, style):
     )
 
 
+def _ph(value, style):
+    """
+    Paragraph con markup simple de ReportLab (<b>, <i>, etc.).
+    Los valores dinámicos deben escaparse antes de interpolarlos.
+    """
+    return Paragraph(
+        _text(value),
+        style,
+    )
+
+
+def _format_datetime(value) -> str:
+    if not value:
+        return "-"
+
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        raw = str(value).strip()
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except Exception:
+            return raw
+
+    return dt.strftime("%d/%m/%Y %H:%M:%S")
+
+
 def build_invoice_ride_pdf(
     *,
     invoice,
@@ -149,32 +176,48 @@ def build_invoice_ride_pdf(
         or submission.access_key
     )
 
+
+    workshop_name_html = escape(_text(workshop.name))
+    workshop_address_html = escape(_text(workshop.address))
+    workshop_ruc_html = escape(_text(workshop.ruc))
+    invoice_number_html = escape(_text(invoice.invoice_number))
+    authorization_number_html = escape(_text(authorization_number))
+    environment_html = escape(_text(environment).upper())
+    client_name_html = escape(_text(invoice.client_name))
+    client_identification_html = escape(_text(invoice.client_identification))
+    issue_date_html = escape(_text(invoice.issue_date))
+    client_address_html = escape(_text(invoice.client_address))
+    client_email_html = escape(_text(invoice.client_email))
+    workshop_phone_html = escape(_text(workshop.phone))
+    workshop_email_html = escape(_text(workshop.email))
+    auth_date_html = escape(_format_datetime(submission.authorization_date))
+
     # --------------------------------------------------------
     # Encabezado en dos columnas
     # --------------------------------------------------------
     issuer_box = [
         _p(issuer_name, title),
-        _p(
-            f"<b>Nombre comercial:</b> {_text(workshop.name)}",
+        _ph(
+            f"<b>Nombre comercial:</b> {workshop_name_html}",
             body,
         ),
-        _p(
-            f"<b>Dirección matriz:</b> {_text(workshop.address)}",
+        _ph(
+            f"<b>Dirección matriz:</b> {workshop_address_html}",
             body,
         ),
     ]
 
     if getattr(settings, "special_taxpayer_code", None):
         issuer_box.append(
-            _p(
+            _ph(
                 "<b>Contribuyente especial:</b> "
-                f"{settings.special_taxpayer_code}",
+                f"{escape(str(settings.special_taxpayer_code))}",
                 body,
             )
         )
 
     issuer_box.append(
-        _p(
+        _ph(
             "<b>Obligado a llevar contabilidad:</b> "
             f"{'SI' if settings.accounting_required else 'NO'}",
             body,
@@ -183,31 +226,31 @@ def build_invoice_ride_pdf(
 
     if getattr(settings, "rimpe_type", None):
         issuer_box.append(
-            _p(
-                f"<b>Régimen:</b> {settings.rimpe_type}",
+            _ph(
+                f"<b>Régimen:</b> {escape(str(settings.rimpe_type))}",
                 body,
             )
         )
 
     fiscal_box = [
-        _p(f"<b>R.U.C.:</b> {_text(workshop.ruc)}", body_bold),
-        _p("<b>FACTURA</b>", h2),
-        _p(
-            f"<b>No.</b> {_text(invoice.invoice_number)}",
+        _ph(f"<b>R.U.C.:</b> {workshop_ruc_html}", body_bold),
+        _ph("<b>FACTURA</b>", h2),
+        _ph(
+            f"<b>No.</b> {invoice_number_html}",
             body_bold,
         ),
-        _p("<b>NÚMERO DE AUTORIZACIÓN</b>", small),
+        _ph("<b>NÚMERO DE AUTORIZACIÓN</b>", small),
         _p(authorization_number, small),
-        _p(
+        _ph(
             "<b>FECHA DE AUTORIZACIÓN:</b> "
-            f"{_text(submission.authorization_date)}",
+            f"{auth_date_html}",
             body,
         ),
-        _p(
-            f"<b>AMBIENTE:</b> {_text(environment).upper()}",
+        _ph(
+            f"<b>AMBIENTE:</b> {environment_html}",
             body,
         ),
-        _p("<b>EMISIÓN:</b> NORMAL", body),
+        _ph("<b>EMISIÓN:</b> NORMAL", body),
     ]
 
     header = Table(
@@ -245,7 +288,7 @@ def build_invoice_ride_pdf(
 
     barcode_box = Table(
         [
-            [_p("<b>CLAVE DE ACCESO</b>", small)],
+            [_ph("<b>CLAVE DE ACCESO</b>", small)],
             [barcode],
             [_p(access_key, small)],
         ],
@@ -271,30 +314,30 @@ def build_invoice_ride_pdf(
     # --------------------------------------------------------
     customer_rows = [
         [
-            _p(
+            _ph(
                 f"<b>Razón social / Nombres:</b> "
-                f"{_text(invoice.client_name)}",
+                f"{client_name_html}",
                 body,
             ),
-            _p(
+            _ph(
                 f"<b>Identificación:</b> "
-                f"{_text(invoice.client_identification)}",
+                f"{client_identification_html}",
                 body,
             ),
         ],
         [
-            _p(
-                f"<b>Fecha emisión:</b> {_text(invoice.issue_date)}",
+            _ph(
+                f"<b>Fecha emisión:</b> {issue_date_html}",
                 body,
             ),
-            _p(
-                f"<b>Dirección:</b> {_text(invoice.client_address)}",
+            _ph(
+                f"<b>Dirección:</b> {client_address_html}",
                 body,
             ),
         ],
         [
-            _p(
-                f"<b>Email:</b> {_text(invoice.client_email)}",
+            _ph(
+                f"<b>Email:</b> {client_email_html}",
                 body,
             ),
             "",
@@ -326,12 +369,12 @@ def build_invoice_ride_pdf(
     # --------------------------------------------------------
     detail_data = [
         [
-            _p("<b>Cant.</b>", small),
-            _p("<b>Descripción</b>", small),
-            _p("<b>P. Unit.</b>", small),
-            _p("<b>Descuento</b>", small),
-            _p("<b>IVA</b>", small),
-            _p("<b>Total</b>", small),
+            _ph("<b>Cant.</b>", small),
+            _ph("<b>Descripción</b>", small),
+            _ph("<b>P. Unit.</b>", small),
+            _ph("<b>Descuento</b>", small),
+            _ph("<b>IVA</b>", small),
+            _ph("<b>Total</b>", small),
         ]
     ]
 
@@ -382,9 +425,9 @@ def build_invoice_ride_pdf(
     # Información adicional + totales
     # --------------------------------------------------------
     additional = [
-        _p("<b>Información adicional</b>", h2),
-        _p(f"<b>Teléfono:</b> {_text(workshop.phone)}", body),
-        _p(f"<b>Email:</b> {_text(workshop.email)}", body),
+        _ph("<b>Información adicional</b>", h2),
+        _ph(f"<b>Teléfono:</b> {workshop_phone_html}", body),
+        _ph(f"<b>Email:</b> {workshop_email_html}", body),
     ]
 
     if getattr(workshop, "footer_text", None):
@@ -397,7 +440,7 @@ def build_invoice_ride_pdf(
         [_p("Subtotal gravado", body), _p(_money(invoice.subtotal_taxed), right)],
         [_p("Descuento", body), _p(_money(invoice.discount), right)],
         [_p("IVA", body), _p(_money(invoice.tax_amount), right)],
-        [_p("<b>VALOR TOTAL</b>", body_bold), _p(f"<b>{_money(invoice.total)}</b>", right)],
+        [_ph("<b>VALOR TOTAL</b>", body_bold), _ph(f"<b>{escape(_money(invoice.total))}</b>", right)],
     ]
 
     totals_table = Table(
