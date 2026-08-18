@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, engine
 
-
 # =========================
 # MODELOS
 # =========================
@@ -24,6 +23,7 @@ from app.models.invoice_item import InvoiceItem  # noqa: F401
 from app.models.electronic_document import ElectronicDocument  # noqa: F401
 from app.models.electronic_signature import ElectronicSignature  # noqa: F401
 from app.models.sri_submission import SriSubmission  # noqa: F401
+from app.models.sri_certificate import SriCertificate  # noqa: F401
 
 # SWM Care
 from app.models.swm_user import SwmUser  # noqa: F401
@@ -63,6 +63,7 @@ from app.routers.sri_documents import router as sri_documents_router
 from app.routers.sri_signatures import router as sri_signatures_router
 from app.routers.sri_submissions import router as sri_submissions_router
 from app.routers.sri_settings import router as sri_settings_router
+from app.routers.sri_certificates import router as sri_certificates_router
 
 
 # =========================
@@ -78,7 +79,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Taller PRO API + SWM Care",
-    version="1.7.0",
+    version="1.8.0",
 )
 
 
@@ -128,6 +129,7 @@ app.include_router(sri_documents_router)
 app.include_router(sri_signatures_router)
 app.include_router(sri_submissions_router)
 app.include_router(sri_settings_router)
+app.include_router(sri_certificates_router)
 
 
 @app.get("/")
