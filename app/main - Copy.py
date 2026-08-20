@@ -64,6 +64,8 @@ from app.routers.sri_signatures import router as sri_signatures_router
 from app.routers.sri_submissions import router as sri_submissions_router
 from app.routers.sri_settings import router as sri_settings_router
 from app.routers.sri_certificates import router as sri_certificates_router
+from app.routers.sri_flow import router as sri_flow_router
+from app.routers.sri_delivery import router as sri_delivery_router
 
 
 # =========================
@@ -79,7 +81,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Taller PRO API + SWM Care",
-    version="1.8.0",
+    version="1.9.0",
 )
 
 
@@ -130,6 +132,8 @@ app.include_router(sri_signatures_router)
 app.include_router(sri_submissions_router)
 app.include_router(sri_settings_router)
 app.include_router(sri_certificates_router)
+app.include_router(sri_flow_router)
+app.include_router(sri_delivery_router)
 
 
 @app.get("/")
