@@ -20,6 +20,7 @@ class AdminWorkshopCreate(BaseModel):
     admin_name: str = Field(min_length=2, max_length=150)
     admin_email: str = Field(min_length=5, max_length=150)
     admin_password: str = Field(min_length=6, max_length=72)
+    inventory_enabled: bool = False
 
 
 class AdminWorkshopUpdate(BaseModel):
@@ -31,10 +32,15 @@ class AdminWorkshopUpdate(BaseModel):
     admin_name: str | None = Field(default=None, max_length=150)
     admin_email: str | None = Field(default=None, max_length=150)
     admin_password: str | None = Field(default=None, max_length=72)
+    inventory_enabled: bool | None = None
 
 
 class AdminWorkshopStatusUpdate(BaseModel):
     status: str
+
+
+class AdminWorkshopInventoryUpdate(BaseModel):
+    inventory_enabled: bool
 
 
 def require_superadmin(current_user: User = Depends(get_current_user)) -> User:
@@ -58,7 +64,7 @@ def list_admin_workshops(
     for workshop in workshops:
         admin_user = (
             db.query(User)
-            .filter(User.workshop_id == workshop.id, User.role == "admin")
+            .filter(User.workshop_id == workshop.id, User.role.in_(["admin", "superadmin"]))
             .order_by(User.id.asc())
             .first()
         )
@@ -72,6 +78,7 @@ def list_admin_workshops(
                 "address": workshop.address,
                 "status": workshop.status,
                 "setup_completed": workshop.setup_completed,
+                "inventory_enabled": workshop.inventory_enabled,
                 "created_at": workshop.created_at,
                 "admin_name": admin_user.full_name if admin_user else None,
                 "admin_email": admin_user.email if admin_user else None,
@@ -104,6 +111,7 @@ def create_admin_workshop(
         address=data.address.strip() if data.address else None,
         status="activo",
         setup_completed=False,
+        inventory_enabled=data.inventory_enabled,
     )
 
     db.add(workshop)
@@ -141,7 +149,7 @@ def update_admin_workshop(
 
     admin_user = (
         db.query(User)
-        .filter(User.workshop_id == workshop_id, User.role == "admin")
+        .filter(User.workshop_id == workshop_id, User.role.in_(["admin", "superadmin"]))
         .order_by(User.id.asc())
         .first()
     )
@@ -179,12 +187,8 @@ def update_admin_workshop(
         field is not None for field in (admin_name, admin_email, admin_password)
     )
 
-    if user_fields_received and not admin_user:
-        raise HTTPException(
-            status_code=404,
-            detail="El taller no tiene un usuario administrador asociado",
-        )
-
+    # Un taller puede estar asociado únicamente al usuario superadmin.
+    # Eso no debe impedir actualizar el taller ni activar módulos.
     if admin_user:
         if admin_name is not None:
             normalized_admin_name = admin_name.strip()
@@ -235,6 +239,33 @@ def update_admin_workshop(
     return {
         "message": "Taller y usuario administrador actualizados correctamente",
         "workshop_id": workshop.id,
+    }
+
+
+@router.patch("/workshops/{workshop_id}/inventory")
+def change_admin_workshop_inventory(
+    workshop_id: int,
+    data: AdminWorkshopInventoryUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_superadmin),
+):
+    workshop = db.query(Workshop).filter(Workshop.id == workshop_id).first()
+
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Taller no encontrado")
+
+    workshop.inventory_enabled = data.inventory_enabled
+    db.commit()
+    db.refresh(workshop)
+
+    return {
+        "message": (
+            "Inventario activado correctamente"
+            if workshop.inventory_enabled
+            else "Inventario desactivado correctamente"
+        ),
+        "workshop_id": workshop.id,
+        "inventory_enabled": workshop.inventory_enabled,
     }
 
 

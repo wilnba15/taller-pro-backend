@@ -21,6 +21,7 @@ class AdminWorkshopCreate(BaseModel):
     admin_email: str = Field(min_length=5, max_length=150)
     admin_password: str = Field(min_length=6, max_length=72)
     inventory_enabled: bool = False
+    billing_enabled: bool = False
 
 
 class AdminWorkshopUpdate(BaseModel):
@@ -33,6 +34,7 @@ class AdminWorkshopUpdate(BaseModel):
     admin_email: str | None = Field(default=None, max_length=150)
     admin_password: str | None = Field(default=None, max_length=72)
     inventory_enabled: bool | None = None
+    billing_enabled: bool | None = None
 
 
 class AdminWorkshopStatusUpdate(BaseModel):
@@ -41,6 +43,10 @@ class AdminWorkshopStatusUpdate(BaseModel):
 
 class AdminWorkshopInventoryUpdate(BaseModel):
     inventory_enabled: bool
+
+
+class AdminWorkshopBillingUpdate(BaseModel):
+    billing_enabled: bool
 
 
 def require_superadmin(current_user: User = Depends(get_current_user)) -> User:
@@ -79,6 +85,7 @@ def list_admin_workshops(
                 "status": workshop.status,
                 "setup_completed": workshop.setup_completed,
                 "inventory_enabled": workshop.inventory_enabled,
+                "billing_enabled": workshop.billing_enabled,
                 "created_at": workshop.created_at,
                 "admin_name": admin_user.full_name if admin_user else None,
                 "admin_email": admin_user.email if admin_user else None,
@@ -112,6 +119,7 @@ def create_admin_workshop(
         status="activo",
         setup_completed=False,
         inventory_enabled=data.inventory_enabled,
+        billing_enabled=data.billing_enabled,
     )
 
     db.add(workshop)
@@ -266,6 +274,34 @@ def change_admin_workshop_inventory(
         ),
         "workshop_id": workshop.id,
         "inventory_enabled": workshop.inventory_enabled,
+    }
+
+
+
+@router.patch("/workshops/{workshop_id}/billing")
+def change_admin_workshop_billing(
+    workshop_id: int,
+    data: AdminWorkshopBillingUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_superadmin),
+):
+    workshop = db.query(Workshop).filter(Workshop.id == workshop_id).first()
+
+    if not workshop:
+        raise HTTPException(status_code=404, detail="Taller no encontrado")
+
+    workshop.billing_enabled = data.billing_enabled
+    db.commit()
+    db.refresh(workshop)
+
+    return {
+        "message": (
+            "Facturación electrónica activada correctamente"
+            if workshop.billing_enabled
+            else "Facturación electrónica desactivada correctamente"
+        ),
+        "workshop_id": workshop.id,
+        "billing_enabled": workshop.billing_enabled,
     }
 
 

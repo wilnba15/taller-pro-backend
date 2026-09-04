@@ -19,6 +19,7 @@ class Workshop(Base):
     logo_url = Column(String(500), nullable=True)
     footer_text = Column(Text, nullable=True)
     setup_completed = Column(Boolean, nullable=False, default=False, server_default="false")
+    inventory_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
     status = Column(String(30), nullable=False, default="activo")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -26,3 +27,4 @@ class Workshop(Base):
     clients = relationship("Client", back_populates="workshop", cascade="all, delete")
     vehicles = relationship("Vehicle", back_populates="workshop", cascade="all, delete")
     work_orders = relationship("WorkOrder", back_populates="workshop", cascade="all, delete")
+    inventory_products = relationship("InventoryProduct", back_populates="workshop", cascade="all, delete-orphan")

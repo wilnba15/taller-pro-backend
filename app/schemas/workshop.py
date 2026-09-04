@@ -15,6 +15,7 @@ class WorkshopCreate(BaseModel):
     logo_url: Optional[str] = Field(default=None, max_length=500)
     footer_text: Optional[str] = None
     inventory_enabled: bool = False
+    billing_enabled: bool = False
     status: Literal["activo", "inactivo"] = "activo"
 
 
@@ -29,6 +30,7 @@ class WorkshopUpdate(BaseModel):
     logo_url: Optional[str] = Field(default=None, max_length=500)
     footer_text: Optional[str] = None
     inventory_enabled: Optional[bool] = None
+    billing_enabled: Optional[bool] = None
     status: Optional[Literal["activo", "inactivo"]] = None
 
 
@@ -43,6 +45,7 @@ class WorkshopSetupUpdate(BaseModel):
     logo_url: Optional[str] = Field(default=None, max_length=500)
     footer_text: Optional[str] = None
     inventory_enabled: Optional[bool] = None
+    billing_enabled: Optional[bool] = None
 
 
 class WorkshopResponse(BaseModel):
@@ -57,6 +60,7 @@ class WorkshopResponse(BaseModel):
     logo_url: Optional[str] = None
     footer_text: Optional[str] = None
     inventory_enabled: bool = False
+    billing_enabled: bool = False
     setup_completed: bool
     status: str
     created_at: datetime
