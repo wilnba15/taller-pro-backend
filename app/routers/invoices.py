@@ -253,6 +253,12 @@ def create_invoice_from_work_order(
             detail="Taller no encontrado",
         )
 
+    if not workshop.billing_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="La facturación electrónica no está habilitada para este taller",
+        )
+
     if not workshop.ruc:
         raise HTTPException(
             status_code=400,
